@@ -44,9 +44,9 @@ class Simulation:
             self.X = np.random.rand(self.num_pts,self.dim)
         
         if velocities == 'Stationary':
-            self.V =  np.zeros(self.dim)
+            self.V =  np.zeros((self.num_pts,self.dim))
         else:
-            self.V =  np.zeros(self.dim)
+            self.V =  np.zeros((self.num_pts,self.dim))
 
         self.bounds = np.zeros((2,self.dim))
     
@@ -91,8 +91,6 @@ class Simulation:
         self.update_distances()
         self.update_distance_gradients()
 
-        
-
         # Compute the pressure
         self.update_density_kernel_matrix()
         self.update_densities()    
@@ -127,7 +125,7 @@ class Simulation:
 
     #Density Estimation
     def update_distances(self): 
-        xy = np.dot(self.X.T,self.X) # O(num_pts ** 2 * dim)
+        xy = self.X @ self.X.T # O(num_pts ** 2 * dim)
         x2 = (self.X * self.X).sum(1) # O(num_pts * dim)
         y2 = (self.X * self.X).sum(1) # O(num_pts * dim)
         d2 = np.add.outer(x2,y2) - 2 * xy  # O(num_pts * dim)
@@ -172,10 +170,10 @@ class Simulation:
         symmetric_pressures = np.add.outer(self.pressures,self.pressures) / (2 * self.densities)
 
         # Weight the gradients by the symmetric pressures
-        pressure_forces = np.zeros((self.num_pts,self.num_pts, self.dim))
+        self.pressure_forces = np.zeros((self.num_pts,self.num_pts, self.dim))
         
         for i in range(self.dim):
-            pressure_forces[:,:,i] = symmetric_pressures.T * self.kernel_gradients[:,:,i]
+            self.pressure_forces[:,:,i] = symmetric_pressures.T * self.kernel_gradients[:,:,i]
 
         #sum over one axis to obtain estimate for the pressure forces at each point.
         self.pressure_forces = self.mass_constant *  np.sum(self.pressure_forces,axis=1)
@@ -194,6 +192,7 @@ class Simulation:
         # Compute the symmetric pressure so that the SPH pressure computation is symmetric.
         symmetric_velocities = np.zeros((self.num_pts,self.num_pts,self.dim))
         self.viscosity_forces = np.zeros((self.num_pts,self.num_pts,self.dim))
+        
         for i in range(self.dim):
             symmetric_velocities[:,:,i] = np.subtract.outer(self.V[:,i],self.V[:,i]) / self.densities
             self.viscosity_forces[:,:,i] = symmetric_velocities[:,:,i] * self.viscosity_kernel_laplacian
