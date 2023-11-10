@@ -8,16 +8,19 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import matplotlib.collections as mc
 
-sim = sph.Simulation(100,2)
-
+sim = sph.Simulation(800,2)
 #Initialize plot
 fig = plt.Figure()
 
 def animate(i):
+    ax.cla()
+    ax.set_xlim(sim.bounds[1,1], sim.bounds[0,1])
+    ax.set_ylim(sim.bounds[1,1], sim.bounds[0,1])
     sim.simulate()
     collection.set_offsets(sim.X)
+    collection.set_array(np.sum(sim.V**2,axis=1))
     ax.add_collection(collection)
-
+    
 #Run the GUI
 vis = tk.Tk()
 vis.title('Smooth Particle Hydrodynamics Visualization')
@@ -29,10 +32,10 @@ ax = fig.add_subplot(111)
 ax.set_xlim(sim.bounds[1,1], sim.bounds[0,1])
 ax.set_ylim(sim.bounds[1,1], sim.bounds[0,1])
 
-sizes = sim.eps * np.ones(sim.num_pts)
-collection = mc.CircleCollection(sizes, offsets=sim.X, transOffset=ax.transData, color='green')
+sizes = 150 * np.ones(sim.num_pts)
+collection = mc.CircleCollection(sizes, offsets=sim.X, transOffset=ax.transData,alpha=.1,linewidth=0,cmap = 'plasma')
 ax.add_collection(collection)
 
-ani = animation.FuncAnimation(fig,animate,frames=100)
+ani = animation.FuncAnimation(fig,animate,interval=(sim.dt*1000))
 
 vis.mainloop()    

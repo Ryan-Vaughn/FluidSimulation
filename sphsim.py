@@ -1,5 +1,9 @@
 import numpy as np
 
+
+# TODO: We need to find a way to fix the numerical errors breaking things in
+# 1) distance computation sqrt(negative number)
+# 2) distance gradient computations (division by zero)
 class Simulation:
     
     # Class variables that specify the inital distribution and constants.
@@ -7,16 +11,16 @@ class Simulation:
     initial_dataset = 'Gaussian'
     initial_velocities = 'Stationary'
     
-    margin = 1.5
+    margin = .5
 
-    mass_constant = 1
+    mass_constant = 3
     gravity_constant = 9.8
-    eps = .6
+    eps = .3
     rest_density = 1
-    pressure_constant = .4
-    viscosity_constant = .001
+    pressure_constant = 1
+    viscosity_constant = .002
 
-    dt = 1/60
+    dt = 1/30
 
     
     def __init__(self,num_pts,dim):
@@ -29,9 +33,6 @@ class Simulation:
         self.populate()
         # Set instance constants to the default class variables.
         self.initialize_constants()
-        
-        self.gravity_forces  = np.zeros((self.num_pts,self.dim))
-        self.gravity_forces[:,1] = - self.gravity_constant * np.ones(self.num_pts)
     
     def populate(self,dataset='Gaussian',velocities='Stationary'):
         if dataset == 'Two Different Boxes':
@@ -106,13 +107,19 @@ class Simulation:
         # Compute the surface tension (not implemented)
         self.surface_tension_forces = np.zeros(self.X.shape)
         
-        # Gravity is computed once outside the loop
+        # Compute Gravity 
+        self.gravity_forces  = np.zeros((self.num_pts,self.dim))
+        self.gravity_forces[:,1] = - self.gravity_constant * self.mass_constant * np.ones(self.num_pts)
+
+        # Compute wind 
+        self.wind_forces  = np.zeros((self.num_pts,self.dim))
+        self.wind_forces[:,0] =  5 * np.cos(2 * self.t) * np.ones(self.num_pts)
 
         ## sum the forces
-        self.forces = self.pressure_forces + self.viscosity_forces + self.surface_tension_forces + self.gravity_forces
+        self.forces = self.pressure_forces + self.viscosity_forces + self.surface_tension_forces + self.gravity_forces + self.wind_forces
 
         ## Update velocity using forward Euler
-        self.V = self.V + self.forces * self.dt
+        self.V += self.forces/self.mass_constant * self.dt
 
         # Update position from velocity using forward Euler
         self.X = self.X + self.V * self.dt
@@ -130,6 +137,10 @@ class Simulation:
         y2 = (self.X * self.X).sum(1) # O(num_pts * dim)
         d2 = np.add.outer(x2,y2) - 2 * xy  # O(num_pts * dim)
         d2.flat[::len(self.X)+1] = 0 # Rounding issues? Don't understand this.
+        
+        # Another crappy hack to fix negative distances.
+        d2[d2<=0] = 3 * np.finfo(float).eps
+
         self.distances = np.sqrt(d2)  # O (num_pts * dim)
 
     def update_density_kernel_matrix(self):
@@ -149,6 +160,10 @@ class Simulation:
         self.distance_gradients = np.zeros((self.num_pts,self.num_pts,self.dim))
         # We make an artificial change here to avoid division by zero on the diagonal.
         modified_distances =  self.distances + np.eye(self.num_pts)
+        
+        # Another crappy hack to keep things from breaking
+        modified_distances[modified_distances <=0] = 3 * np.finfo(float).eps
+
         for i in range(self.dim):
             self.distance_gradients[:,:,i] =  np.subtract.outer(self.X[:,i],self.X[:,i]) / modified_distances
 
