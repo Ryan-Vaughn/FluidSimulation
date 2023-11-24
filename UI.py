@@ -6,10 +6,13 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import matplotlib.style as mplstyle
 import matplotlib.collections as mc
 
-sim = sph.Simulation(800,2)
+
+sim = sph.Simulation(300,2)
 #Initialize plot
+mplstyle.use('fast')
 fig = plt.Figure()
 
 def animate(i):
@@ -38,4 +41,4 @@ ax.add_collection(collection)
 
 ani = animation.FuncAnimation(fig,animate,interval=(sim.dt*1000))
 
-vis.mainloop()    
+vis.mainloop()

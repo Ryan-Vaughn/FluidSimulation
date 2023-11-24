@@ -31,6 +31,8 @@ class Simulation:
 
         # Generate points, bounds, intial velocity
         self.populate()
+        # Set initial bounding behavior
+        self.initialize_bounds()
         # Set instance constants to the default class variables.
         self.initialize_constants()
     
@@ -48,16 +50,17 @@ class Simulation:
             self.V =  np.zeros((self.num_pts,self.dim))
         else:
             self.V =  np.zeros((self.num_pts,self.dim))
-
-        self.bounds = np.zeros((2,self.dim))
+        return self
     
+    def initialize_bounds(self):
         # Set initial boundaries based on the initial points.
+        self.bounds = np.zeros((2,self.dim))
         for i in range(self.dim):
             upper_bound = np.max(self.X[:,i])
-            lower_bound = np.min(self.X[:,i])
             self.bounds[0,i] = upper_bound + Simulation.margin
-            self.bounds[1,i] = lower_bound - Simulation.margin
-
+            self.bounds[1,i] = 0
+        return self
+    
     def initialize_constants(self):
         # Set all constant parameters according to the class variables. This occurs at initialization only.
         self.mass_constant = Simulation.mass_constant
@@ -86,22 +89,25 @@ class Simulation:
         self.viscosity_constant = viscosity_constant
         self.dt = dt
 
-        
+    def update_bounds(self):
+        # Method to adjust the bounds on the fly.
+        pass
+
     def simulate(self):
         # Compute the pairwise distances
-        self.update_distances()
-        self.update_distance_gradients()
+        self.compute_distances()
+        self.compute_distance_gradients()
 
         # Compute the pressure
-        self.update_density_kernel_matrix()
-        self.update_densities()    
-        self.update_pressures()
+        self.compute_density_kernel_matrix()
+        self.compute_densities()    
+        self.compute_pressures()
         
-        self.update_pressure_kernel_gradient()
+        self.compute_pressure_kernel_gradient()
         self.compute_pressure_force()
         
         # Compute the viscosity
-        self.update_viscosity_kernel_laplacian()
+        self.compute_viscosity_kernel_laplacian()
         self.compute_viscosity_force()
 
         # Compute the surface tension (not implemented)
@@ -111,7 +117,7 @@ class Simulation:
         self.gravity_forces  = np.zeros((self.num_pts,self.dim))
         self.gravity_forces[:,1] = - self.gravity_constant * self.mass_constant * np.ones(self.num_pts)
 
-        # Compute wind 
+        # Compute wind (just for fun)
         self.wind_forces  = np.zeros((self.num_pts,self.dim))
         self.wind_forces[:,0] =  5 * np.cos(2 * self.t) * np.ones(self.num_pts)
 
@@ -131,7 +137,7 @@ class Simulation:
         self.t += self.dt
 
     #Density Estimation
-    def update_distances(self): 
+    def compute_distances(self): 
         xy = self.X @ self.X.T # O(num_pts ** 2 * dim)
         x2 = (self.X * self.X).sum(1) # O(num_pts * dim)
         y2 = (self.X * self.X).sum(1) # O(num_pts * dim)
@@ -143,20 +149,19 @@ class Simulation:
 
         self.distances = np.sqrt(d2)  # O (num_pts * dim)
 
-    def update_density_kernel_matrix(self):
+    def compute_density_kernel_matrix(self):
         self.density_kernel_matrix = 315/(64 * np.pi * self.eps ** 9) * (self.eps ** 2 - self.distances ** 2) ** 3
         self.density_kernel_matrix[self.distances > self.eps] = 0
 
-    def update_densities(self):
+    def compute_densities(self):
         #Compute densities using mass weighted kernel density estimation
         self.densities = self.mass_constant * np.sum(self.density_kernel_matrix, axis=0)
 
-    # Pressure Force Estimation
-    def update_pressures(self):
+    def compute_pressures(self):
         self.pressures = self.pressure_constant * (self.densities - self.rest_density)
         
 
-    def update_distance_gradients(self):
+    def compute_distance_gradients(self):
         self.distance_gradients = np.zeros((self.num_pts,self.num_pts,self.dim))
         # We make an artificial change here to avoid division by zero on the diagonal.
         modified_distances =  self.distances + np.eye(self.num_pts)
@@ -167,7 +172,7 @@ class Simulation:
         for i in range(self.dim):
             self.distance_gradients[:,:,i] =  np.subtract.outer(self.X[:,i],self.X[:,i]) / modified_distances
 
-    def update_pressure_kernel_gradient(self):
+    def compute_pressure_kernel_gradient(self):
         # First compute the gradient of the shape function using distance = distance ** 2.
         kernel_derivative = 45 * (self.eps - self.distances) ** 2
         # Assume that derivative is zero outside the support of the shape function.
@@ -194,12 +199,12 @@ class Simulation:
         self.pressure_forces = self.mass_constant *  np.sum(self.pressure_forces,axis=1)
 
     # Viscosity Estimation
-    def update_viscosity_kernel_matrix(self):
+    def compute_viscosity_kernel_matrix(self):
         self.viscosity_kernel_matrix = 15/(2 * np.pi * self.eps ** 3) * ((- self.distances ** 3)/(2 * self.eps ** 3) +  (self.distances ** 2) / self.eps ** 2 + self.eps / (2 * self.distances) - 1)
         self.viscosity_kernel_matrix[self.distances > self.eps] = 0
         
 
-    def update_viscosity_kernel_laplacian(self):
+    def compute_viscosity_kernel_laplacian(self):
         self.viscosity_kernel_laplacian = 45 / (np.pi * self.eps ** 6) * (self.eps - self.distances)
         
 
@@ -234,4 +239,75 @@ class Simulation:
             self.forces[:,i][too_large | too_small] = 0
 
     
+class Cell:
+    def __init__(self):
+        # set coordinates and compute all neighbors coordinates
+        # apply hash function to coords to get cell id
+        # do we need neighbor id?
+        
+        self.coords = None
+        self.index = None
+        self.neighbors_coords = None
+        self.neighbors_id = None
+        self.active = None
+
+# ----------------------------------------------------------------------------
+# Passing data to and from Simulation
+# ----------------------------------------------------------------------------
+
+    def populate(self,parent_sim):
+        # query the parent simulation to populate the cell with points X_C (X in cell C)
+        # query the parent simulation for the velocities V_C of X_C
+        # query all neighboring cells to get all points in neighbors of X_C (X_neighbors?)
+        
+        # construct an array which stores the location of the points of X_C in X
+        pass
+    
+    def update_density(self,parent_sim):
+        # Return the densities of each point in the cell
+        pass
+
+    def update_pressure(self,parent_sim):
+        # Return the pressure force of each point in the cell
+        pass
+
+    def update_viscosity(self,parent_sim):
+        # Return the viscosity force of each point in the cell
+        pass
+
+# ----------------------------------------------------------------------------
+# Iterating the Dynamics
+# ----------------------------------------------------------------------------
+
+    def compute_distances(self):
+        # compute the pairwise distances between points in the cell and points in and
+        # neighboring the cell.
+        pass
+
+    def compute_distance_gradients(self):
+        # compute the gradients of the distance function between points in cell and 
+        # distance 
+        pass
+
+    def compute_density_kernel(self):
+        # compute the density kernel matrix for all points in X. Kernel matrix
+        # not necessarily square. One axis tracks points in cell, other tracks
+        # points in cell + points in neighbor cells.
+        pass
+    
+    def compute_density(self):
+        # Sum over the axis with neighbor points to compute density
+        pass
+    
+    def compute_symmetric_density(self):
+        # Query all neighbors and take an average of the pairwise pressures.
+        # NOTE: We need to have some indication that all pressures in the
+        # simulation have been computed already (or at least for all neighbors)
+        pass
+
+    def compute_pressure_kernel_gradient(self):
+        # compute the density kernel matrix for all points in X. Kernel matrix
+        # not necessarily square. One axis tracks points in cell, other tracks
+        # points in cell + points in neighbor cells.
+        pass
     
