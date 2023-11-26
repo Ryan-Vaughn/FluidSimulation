@@ -35,8 +35,16 @@ class Simulation:
         self.initialize_bounds()
         # Set instance constants to the default class variables.
         self.initialize_constants()
-    
+
+        # --------------------------------------------------------------------
+        # TODO:
+        # --------------------------------------------------------------------
+        # 1. Initialize the grid
+        # 2. Create a cell for each point in the grid.
+        # --------------------------------------------------------------------
+
     def populate(self,dataset='Gaussian',velocities='Stationary'):
+        
         if dataset == 'Two Different Boxes':
             self.X = np.random.rand(self.num_pts,self.dim) # This was chosen to be sklearn compatible.
             self.X[int(self.num_pts/2):self.num_pts,:] = 4 * self.X[int(self.num_pts/2):self.num_pts,:] + 2
@@ -94,6 +102,29 @@ class Simulation:
         pass
 
     def simulate(self):
+
+        # --------------------------------------------------------------------
+        # TODO:
+        # --------------------------------------------------------------------
+        # 1. For each possible Cell (computed from bounds)
+        #   - Populate (Possibly involves a sorting of X?)
+        #   - Compute distances, density kernel, densities.
+        #   - Return cell density to global density vector.
+        # 2. For each possible Cell
+        #   - Compute symmetric density (Requires the global density vector update)
+        #   - Compute distance gradients
+        #   - Compute the pressure kernel shape function gradient
+        #   - Compute the pressure force.
+        # 
+        #   - Compute the viscosity kernel shape function laplacian.
+        #   - Compute the viscosity force.
+        #   - Return pressure force and viscosity force to global simulation memory.
+        # 3. Compute global forces
+        # 4. Iterate the dynamics using forward Euler
+        # 5. Resolve boundary collisions
+        # 6. Update time.
+        # --------------------------------------------------------------------
+        
         # Compute the pairwise distances
         self.compute_distances()
         self.compute_distance_gradients()
@@ -209,7 +240,6 @@ class Simulation:
         
 
     def compute_viscosity_force(self):
-        # Compute the symmetric pressure so that the SPH pressure computation is symmetric.
         symmetric_velocities = np.zeros((self.num_pts,self.num_pts,self.dim))
         self.viscosity_forces = np.zeros((self.num_pts,self.num_pts,self.dim))
         
@@ -240,6 +270,13 @@ class Simulation:
 
     
 class Cell:
+    '''
+    The Cell class is used to handle any processing that only requires local
+    data (i.e. nearby points.) Its main purpose is to take in a subset of
+    points and velocities from the simulation, then output the pressure and
+    viscosity forces acting on those points.
+    '''
+
     def __init__(self):
         # set coordinates and compute all neighbors coordinates
         # apply hash function to coords to get cell id
@@ -298,16 +335,41 @@ class Cell:
     def compute_density(self):
         # Sum over the axis with neighbor points to compute density
         pass
-    
-    def compute_symmetric_density(self):
+
+    def compute_pressure_kernel_gradient(self):
+        # Compute the pressure kernel gradient (only the shape function.)
+        pass
+
+    def compute_pressures(self):
+       # Using the Simulation variables rest_density and pressure_constant, 
+       # compute the pressure from the density
+       pass
+
+    def compute_symmetric_pressure(self):
         # Query all neighbors and take an average of the pairwise pressures.
         # NOTE: We need to have some indication that all pressures in the
         # simulation have been computed already (or at least for all neighbors)
         pass
 
-    def compute_pressure_kernel_gradient(self):
-        # compute the density kernel matrix for all points in X. Kernel matrix
-        # not necessarily square. One axis tracks points in cell, other tracks
-        # points in cell + points in neighbor cells.
+    def compute_pressure_force(self):
+        # combine pressure kernel gradient, distance gradient, and symmetric pressure
+        # to obtain the pressure force.
+        pass
+
+    def compute_viscosity_kernel(self):
+        # Compute the viscosity kernel matrix in analogous fashion to density kernel.
+        pass
+
+    def compute_viscosity_kernel_laplacian(self):
+        # Compute the viscosity kernel matrix in analogous fashion to density kernel.
         pass
     
+    def compute_symmetric_velocities(self):
+        # Query all neighbors and take an average of the pairwise velocity vectors.
+        # NOTE: We need to have some indication that all pressures in the
+        # simulation have been computed already (or at least for all neighbors)
+        pass
+
+    def compute_viscosity_force(self):
+        # Compute the velocity force
+        pass

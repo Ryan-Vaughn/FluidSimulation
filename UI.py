@@ -10,7 +10,7 @@ import matplotlib.style as mplstyle
 import matplotlib.collections as mc
 
 
-sim = sph.Simulation(300,2)
+sim = sph.Simulation(500,2)
 #Initialize plot
 mplstyle.use('fast')
 fig = plt.Figure()
