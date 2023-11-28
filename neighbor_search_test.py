@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 # NEIGHBORS ARE DETECTED 
 
-num_pts = 20
+num_pts = 4
 dim = 2
 eps = 1
 
@@ -34,7 +34,7 @@ direction_vectors = [[ul,um,ur],[ml,mm,mr],[bl,bm,br]]
 
 def collapse_neighbors(X,v):
     # Map data to nearest integer multiple of epsilon offset by v. 
-    return 3 * eps * np.rint((X+eps*v) / (3 * eps)) - eps * v
+    return 3 * eps * np.rint((X + eps * v) / (3 * eps)) - eps * v
 
 # 
 # Algorithm
@@ -61,6 +61,7 @@ plt.legend()
 plt.show()
 
 
+
 # ---------------------------------------------------------------------------
 
 x_g = G[:,0]
@@ -75,3 +76,18 @@ sorted_keys = h_map[inds]
 unique_keys = np.unique(sorted_keys)
 
 cuts = np.searchsorted(sorted_keys,unique_keys)
+
+
+num_neighbors = 9
+neighbors = np.repeat(X[:, :, np.newaxis], num_neighbors, axis=2)
+
+direction_vectors = np.array([ul,um,ur,ml,mm,mr,bl,bm,br])
+
+cells = eps * np.rint(X / eps)
+
+X_copies = np.repeat(X[:, :, np.newaxis], num_neighbors, axis=2)
+cells_copies = np.repeat(cells[:, :, np.newaxis], num_neighbors, axis=2)
+
+neighbors_copies = 3 * eps * np.rint((X_copies + eps * direction_vectors.T) / (3 * eps)) - eps * direction_vectors.T
+full_neighbors = neighbors.transpose(2,0,1).reshape(-1,dim)
+full_Xs = X_copies.transpose(2,0,1).reshape(-1,dim)

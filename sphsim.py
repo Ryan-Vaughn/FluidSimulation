@@ -100,6 +100,26 @@ class Simulation:
     def update_bounds(self):
         # Method to adjust the bounds on the fly.
         pass
+    
+
+
+    def process_cells(self):
+        # map X to grid
+        # map grid coordinates to hash ID.
+        # arg sort hash IDs
+        # for each unique hash ID:
+        #   cell.assign(hash_ID,X_cell) (assign X to the cell corresponding to hash ID)
+
+        # Copy X num_neighbors times (num_neighbors depends on dim)
+        # This copy is to book keep hash values
+        
+        # Copy X num_neighbors times (num_neighbors depends on dim)
+        # This copy is to book keep positions.
+
+        # map copies to grid
+        # for each copy of X:
+        #   collapse neighboring grid points to grid points offset by each neighboring direction.
+        #   
 
     def simulate(self):
 
