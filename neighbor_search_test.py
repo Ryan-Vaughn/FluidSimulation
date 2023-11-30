@@ -2,8 +2,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-# NEIGHBORS ARE DETECTED 
-
 num_pts = 4
 dim = 2
 eps = 1

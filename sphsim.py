@@ -36,13 +36,6 @@ class Simulation:
         # Set instance constants to the default class variables.
         self.initialize_constants()
 
-        # --------------------------------------------------------------------
-        # TODO:
-        # --------------------------------------------------------------------
-        # 1. Initialize the grid
-        # 2. Create a cell for each point in the grid.
-        # --------------------------------------------------------------------
-
     def populate(self,dataset='Gaussian',velocities='Stationary'):
         
         if dataset == 'Two Different Boxes':
@@ -103,26 +96,66 @@ class Simulation:
     
 
 
-    def process_cells(self):
-        # map X to grid
-        # map grid coordinates to hash ID.
-        # arg sort hash IDs
-        # for each unique hash ID:
-        #   cell.assign(hash_ID,X_cell) (assign X to the cell corresponding to hash ID)
+    def assign_particles(self):
 
+        self.sort_particles()
+        self.map_particles()
+        self.sort_neighbor_particles()
+        self.map_neighbors()
+
+        def sort_particles(self):
+            # map X to grid
+            self.G = self.eps * np.rint(self.X / self.eps)
+            # map grid coordinates to hash ID.
+            x_g = self.G[:,0]
+            y_g = self.G[:,1]
+
+            # Applying hash to G
+            hash_id = (self.x_g + self.y_g) * (self.x_g + self.y_g + 1) / 2 + self.y_g
+            # arg sort hash IDs
+            indices = np.argsort(self.hash_id)
+            # sort hash_id
+            hash_id = hash_id[indices]
+            self.X = self.X[indices]
+            return hash_id, indices
+        
+        def map_particles(self,hash_id):
+            # search unique hash ID
+            unique_hashes = np.unique(hash_id)
+            cuts = np.searchsorted(hash_id, unique_hashes)
+            # for each unique hash ID:
+            for i in unique_hashes:
+                X_cell = self.X[cuts[i]:cuts_i + 1]
+                Cell.populate(i,X_cell)
+
+        def sort_neighbor_particles(self):
         # Copy X num_neighbors times (num_neighbors depends on dim)
         # This copy is to book keep hash values
         
         # Copy X num_neighbors times (num_neighbors depends on dim)
         # This copy is to book keep positions.
 
-        # map copies to grid
-        # for each copy of X:
+        # map hash values X copies to grid
+        # for each copy of hash values X:
         #   collapse neighboring grid points to grid points offset by each neighboring direction.
-        #   
+
+        # flatten hash values X copies to a 2d array
+        # flatten positions X copies to a 2d array in the exact same way
+
+        # map hash values X copies to hash ID
+        # argsort hash values X copies
+
+        # sort position X copies with the arg
+            pass
+
+        def map_neighbors(self):
+            # for each unique hash ID for just X:
+            #   cell.assign_neighbors(hash_ID,X_cell) (assign X_cell and all neighboring X_cell to neighbors)
+            pass
+
+        pass
 
     def simulate(self):
-
         # --------------------------------------------------------------------
         # TODO:
         # --------------------------------------------------------------------
@@ -321,15 +354,15 @@ class Cell:
         pass
     
     def update_density(self,parent_sim):
-        # Return the densities of each point in the cell
+        # Return the densities of each point in the cell and their corresponding position in global memory
         pass
 
     def update_pressure(self,parent_sim):
-        # Return the pressure force of each point in the cell
+        # Return the pressure force of each point in the cell and its corresponding position in global memory.
         pass
 
     def update_viscosity(self,parent_sim):
-        # Return the viscosity force of each point in the cell
+        # Return the viscosity force of each point in the cell and its corresponding position in global memory.
         pass
 
 # ----------------------------------------------------------------------------
