@@ -1,9 +1,9 @@
 import numpy as np
 
-
 # TODO: We need to find a way to fix the numerical errors breaking things in
 # 1) distance computation sqrt(negative number)
 # 2) distance gradient computations (division by zero)
+
 class Simulation:
     
     # Class variables that specify the inital distribution and constants.
@@ -35,6 +35,8 @@ class Simulation:
         self.initialize_bounds()
         # Set instance constants to the default class variables.
         self.initialize_constants()
+        #Initialize grid (must have been populated already)
+        self.initialize_cells()
 
     def populate(self,dataset='Gaussian',velocities='Stationary'):
         
@@ -58,8 +60,10 @@ class Simulation:
         self.bounds = np.zeros((2,self.dim))
         for i in range(self.dim):
             upper_bound = np.max(self.X[:,i])
+
             self.bounds[0,i] = upper_bound + Simulation.margin
             self.bounds[1,i] = 0
+
         return self
     
     def initialize_constants(self):
@@ -94,7 +98,33 @@ class Simulation:
         # Method to adjust the bounds on the fly.
         pass
     
+    def initialize_cells(self):
+        """
+        Procedure to create a dictionary of all cells in the simulation linked
+        to their integer grid coordinates. Also constructs lookup dictionaries
+        from hash values to integer coordinates.
 
+        This procedure is to be called only once per resize.
+        """
+        self.cell_bounds = np.ceil(self.bounds/self.eps)
+        self.cell_x_coords = range(int(self.cell_bounds[0,0]) + 1)
+        self.cell_y_coords = range(int(self.cell_bounds[0,1]) + 1)
+
+        #dictionary which maps integer multiples of epsilon to the coresponding Cell
+        self.cells_dict = { (x,y) : Cell((x,y)) 
+                           for x in self.cell_x_coords 
+                           for y in self.cell_y_coords}
+        
+        self.cells_hash_dict = { (x,y) :  x + y * (x + y + 1) / 2 + y
+                           for x in self.cell_x_coords 
+                           for y in self.cell_y_coords}
+        
+        self.cells_hash_dict_inv = { h : (x,y) for (x,y),h 
+                                    in self.cells_hash_dict.items() }
+        
+    # ------------------------------------------------------------------------    
+    # Helper Functions for initialize_cells
+    # ------------------------------------------------------------------------    
 
     def assign_particles(self):
 
@@ -103,32 +133,31 @@ class Simulation:
         self.sort_neighbor_particles()
         self.map_neighbors()
 
-        def sort_particles(self):
-            # map X to grid
-            self.G = self.eps * np.rint(self.X / self.eps)
-            # map grid coordinates to hash ID.
-            x_g = self.G[:,0]
-            y_g = self.G[:,1]
+    def sort_particles(self):
+                # map X to grid
+                self.G = self.eps * np.rint(self.X / self.eps)
+                # map grid coordinates to hash ID.
+                x_g = self.G[:,0]
+                y_g = self.G[:,1]
 
-            # Applying hash to G
-            hash_id = (self.x_g + self.y_g) * (self.x_g + self.y_g + 1) / 2 + self.y_g
-            # arg sort hash IDs
-            indices = np.argsort(self.hash_id)
-            # sort hash_id
-            hash_id = hash_id[indices]
-            self.X = self.X[indices]
-            return hash_id, indices
-        
-        def map_particles(self,hash_id):
-            # search unique hash ID
-            unique_hashes = np.unique(hash_id)
-            cuts = np.searchsorted(hash_id, unique_hashes)
-            # for each unique hash ID:
-            for i in unique_hashes:
-                X_cell = self.X[cuts[i]:cuts_i + 1]
-                Cell.populate(i,X_cell)
+                # Applying hash to G
+                hash_id = (self.x_g + self.y_g) * (self.x_g + self.y_g + 1) / 2 + self.y_g
+                # arg sort hash IDs
+                self.sort_indices = np.argsort(self.hash_id)
+                # sort hash_id
+                self.hash_id = self.hash_id[self.sort_indices]
+                self.X = self.X[self.sort_indices]
 
-        def sort_neighbor_particles(self):
+    def map_particles(self):
+        # search unique hash ID
+        unique_hashes = np.unique(self.hash_id)
+        cuts = np.searchsorted(self.hash_id, unique_hashes)
+        # for each unique hash ID:
+        for hash in unique_hashes:
+            X_cell = self.X[cuts[hash]:cuts[hash + 1]]
+            self.cells_dict[self.cells_hash_dict_inv[hash]].populate()
+            
+    def sort_neighbor_particles(self):
         # Copy X num_neighbors times (num_neighbors depends on dim)
         # This copy is to book keep hash values
         
@@ -146,14 +175,14 @@ class Simulation:
         # argsort hash values X copies
 
         # sort position X copies with the arg
-            pass
-
-        def map_neighbors(self):
-            # for each unique hash ID for just X:
-            #   cell.assign_neighbors(hash_ID,X_cell) (assign X_cell and all neighboring X_cell to neighbors)
-            pass
-
         pass
+
+    def map_neighbors(self):
+        # for each unique hash ID for just X:
+        #   cell.assign_neighbors(hash_ID,X_cell) (assign X_cell and all neighboring X_cell to neighbors)
+        pass
+    # ------------------------------------------------------------------------
+    # ------------------------------------------------------------------------
 
     def simulate(self):
         # --------------------------------------------------------------------
@@ -330,12 +359,12 @@ class Cell:
     viscosity forces acting on those points.
     '''
 
-    def __init__(self):
+    def __init__(self,coords):
         # set coordinates and compute all neighbors coordinates
         # apply hash function to coords to get cell id
         # do we need neighbor id?
         
-        self.coords = None
+        self.coords = coords
         self.index = None
         self.neighbors_coords = None
         self.neighbors_id = None
