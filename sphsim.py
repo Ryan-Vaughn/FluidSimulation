@@ -117,12 +117,15 @@ class Simulation:
                            for x in self.cell_x_coords 
                            for y in self.cell_y_coords}
         
-        self.cells_hash_dict = { (x,y) :  x + y * (x + y + 1) / 2 + y
+        self.cells_hash_dict = { (x,y) :  int((x + y) * (x + y + 1) / 2 + y)
                            for x in self.cell_x_coords 
                            for y in self.cell_y_coords}
         
         self.cells_hash_dict_inv = { h : (x,y) for (x,y),h 
                                     in self.cells_hash_dict.items() }
+        
+
+
         
     # ------------------------------------------------------------------------    
     # Helper Functions for initialize_cells
@@ -138,31 +141,40 @@ class Simulation:
 
     def sort_particles(self):
         # map X to grid
-        self.G = self.eps * np.rint(self.X / self.eps)
+        self.G = np.rint(self.X / self.eps).astype(int)
         # map grid coordinates to hash ID.
         self.x_g = self.G[:,0]
         self.y_g = self.G[:,1]
 
         # Applying hash to G
-        self.hash_id = (self.x_g + self.y_g) * (self.x_g + self.y_g + 1) / 2 + self.y_g
+        self.hash_id = ((self.x_g + self.y_g) * (self.x_g + self.y_g + 1) / 2 + self.y_g).astype(int)
         # arg sort hash IDs
         self.sort_indices = np.argsort(self.hash_id)
         # sort hash_id
         self.hash_id = self.hash_id[self.sort_indices]
+        
         self.X = self.X[self.sort_indices]
+        self.V = self.V[self.sort_indices]
 
     def get_nonempty_cells(self):
         self.nonempty_cell_hashes = np.unique(self.hash_id)
 
     def map_particles(self):
-        cuts = np.searchsorted(self.hash_id, self.nonempty_cell_hashes)
+        self.cuts = np.searchsorted(self.hash_id, self.nonempty_cell_hashes)
+        # needs to add the endpoint
+        self.cuts = np.append(self.cuts,self.num_pts - 1)
+        
         # for each unique hash ID:
-        for hash in self.nonempty_cell_hashes:
-            #Take out the
-            X_cell = self.X[cuts[hash]:cuts[hash + 1]]
+        
+        for i in range(self.nonempty_cell_hashes.shape[0]):
+            hash = self.nonempty_cell_hashes[i]
+
+            X_cell = self.X[self.cuts[i]:self.cuts[i + 1],:]
+            V_cell = self.V[self.cuts[i]:self.cuts[i + 1],:]
+             
             # Assign X_cell to the cell corresponding to hash
-            self.cells_dict[self.cells_hash_dict_inv[hash]].populate(X_cell)
-            
+            self.cells_dict[self.cells_hash_dict_inv[hash]].populate(X_cell,V_cell)
+
     def sort_neighbor_particles(self):
         # Copy X num_neighbors times (num_neighbors depends on dim)
         # This copy is to book keep hash values
@@ -191,56 +203,36 @@ class Simulation:
     # ------------------------------------------------------------------------
     
     def simulate(self):
-        # --------------------------------------------------------------------
-        # TODO:
-        # --------------------------------------------------------------------
-        # 1. For each possible Cell (computed from bounds)
-        #   - Populate (Possibly involves a sorting of X?)
+        # Assign Particles and Velocities to cells.
         self.assign_particles()
-        #   - Compute distances, density kernel, densities.
-        #   - Return cell density to global density vector.
-
-        # 2. For each possible Cell
-        #   - Compute symmetric density (Requires the global density vector update)
-        #   - Compute distance gradients
-        #   - Compute the pressure kernel shape function gradient
-        #   - Compute the pressure force.
-        # 
-        #   - Compute the viscosity kernel shape function laplacian.
-        #   - Compute the viscosity force.
-        #   - Return pressure force and viscosity force to global simulation memory.
-        # 3. Compute global forces
-        # 4. Iterate the dynamics using forward Euler
-        # 5. Resolve boundary collisions
-        # 6. Update time.
-        # --------------------------------------------------------------------
-
-        # Compute the pairwise distances
+        
+        # Compute the pairwise distances inside Cells
         self.assign_compute_distances()
         self.assign_compute_distance_gradients()
 
         # Compute the pressure
-        self.assign_compute_density_kernel_matrix()
+        self.assign_compute_density_kernel()
         self.assign_compute_densities()    
+        
+        # Densities need to be updated so that neighbors can be queried
+        # for symmetric pressure computation.
+        self.update_densities()
+        
+        # Finish Computing Pressure Forces
+        self.assign_compute_symmetric_pressures()
         self.assign_compute_pressures()
+        self.assign_compute_pressure_kernel_gradients()
+        self.assign_compute_pressure_forces()
         
-        self.assign_compute_pressure_kernel_gradient()
-        self.assign_compute_pressure_force()
-        
-        # Compute the viscosity
+        # Compute the Viscosity Forces
         self.assign_compute_viscosity_kernel_laplacian()
         self.assign_compute_viscosity_force()
 
-        # Compute the surface tension (not implemented)
-        self.surface_tension_forces = np.zeros(self.X.shape)
-        
-        # Compute Gravity 
-        self.gravity_forces  = np.zeros((self.num_pts,self.dim))
-        self.gravity_forces[:,1] = - self.gravity_constant * self.mass_constant * np.ones(self.num_pts)
+        self.update_pressure_forces()
+        self.update_viscosity_forces()
 
-        # Compute wind (just for fun)
-        self.wind_forces  = np.zeros((self.num_pts,self.dim))
-        self.wind_forces[:,0] =  5 * np.cos(2 * self.t) * np.ones(self.num_pts)
+        # Compute Gravity, Wind
+        self.compute_global_forces()
 
         ## sum the forces
         self.forces = self.pressure_forces + self.viscosity_forces + self.surface_tension_forces + self.gravity_forces + self.wind_forces
@@ -256,8 +248,36 @@ class Simulation:
 
         # Update the time
         self.t += self.dt
+# ----------------------------------------------------------------------------
+# Methods that query Cell information back into global memory.
+# ----------------------------------------------------------------------------
+    def update_densities(self):
+        for i in range(self.nonempty_cell_hashes.shape[0]):
+            hash = self.nonempty_cell_hashes[i]
 
-    #Density Estimation
+            # Insert the cell's density values back into global memory.
+            self.densities[self.cuts[i]:self.cuts[i + 1]] = self.cells_dict[self.cells_hash_dict_inv[hash]].densities
+
+    def update_pressure_forces(self):
+        for i in range(self.nonempty_cell_hashes.shape[0]):
+            hash = self.nonempty_cell_hashes[i]
+            
+            # Insert the cell's density values back into global memory.
+            self.pressure_forces[self.cuts[i]:self.cuts[i + 1],:] = self.cells_dict[self.cells_hash_dict_inv[hash],:].pressure_forces
+
+    def update_viscosity_forces(self):
+        for i in range(self.nonempty_cell_hashes.shape[0]):
+            hash = self.nonempty_cell_hashes[i]
+            
+            # Insert the cell's density values back into global memory.
+            self.viscosity_forces[self.cuts[i]:self.cuts[i + 1],:] = self.cells_dict[self.cells_hash_dict_inv[hash],:].viscosity_forces
+# ----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# Methods that instruct all nonempty Cells to compute a quantity.
+# ----------------------------------------------------------------------------
+    # Density Estimation
     def assign_compute_distances(self):
         for hash in self.nonempty_cell_hashes:
             self.cells_hash_dict[hash].compute_distances()
@@ -273,6 +293,10 @@ class Simulation:
     def assign_compute_pressures(self):
         for hash in self.nonempty_cell_hashes:
             self.cells_hash_dict[hash].compute_pressures()
+
+    def assign_compute_symmetric_pressures(self):
+        for hash in self.nonempty_cell_hashes:
+            self.cells_hash_dict[hash].compute_symmetric_pressures()            
     
     def assign_compute_distance_gradients(self):
         for hash in self.nonempty_cell_hashes:
@@ -294,12 +318,27 @@ class Simulation:
     def assign_compute_viscosity_kernel_laplacian(self):
         for hash in self.nonempty_cell_hashes:
             self.cells_hash_dict[hash].compute_viscosity_kernel_laplacian()      
-        pass
+
 
     def assign_compute_viscosity_force(self):
         for hash in self.nonempty_cell_hashes:
             self.cells_hash_dict[hash].compute_viscosity_forces()
-        
+# ----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+
+    # Global Force Computation
+    def compute_global_forces(self):
+            # Compute the surface tension (not implemented)
+            self.surface_tension_forces = np.zeros(self.X.shape)
+            
+            # Compute Gravity 
+            self.gravity_forces  = np.zeros((self.num_pts,self.dim))
+            self.gravity_forces[:,1] = - self.gravity_constant * self.mass_constant * np.ones(self.num_pts)
+
+            # Compute wind (just for fun)
+            self.wind_forces  = np.zeros((self.num_pts,self.dim))
+            self.wind_forces[:,0] =  5 * np.cos(2 * self.t) * np.ones(self.num_pts)
+
     # Collision Detection
     def apply_boundary_collisions(self):
         for i in range(self.dim):
@@ -333,7 +372,10 @@ class Cell:
         # apply hash function to coords to get cell id
         # do we need neighbor id?
         
+        self.X_c = None
+        self.V_c = None
         self.coords = coords
+
         self.index = None
         self.neighbors_coords = None
         self.neighbors_id = None
@@ -343,25 +385,16 @@ class Cell:
 # Passing data to and from Simulation
 # ----------------------------------------------------------------------------
 
-    def populate(self,parent_sim):
-        # query the parent simulation to populate the cell with points X_C (X in cell C)
+    def populate(self,X_cell,V_cell):
         # query the parent simulation for the velocities V_C of X_C
         # query all neighboring cells to get all points in neighbors of X_C (X_neighbors?)
-        
         # construct an array which stores the location of the points of X_C in X
-        pass
-    
-    def update_density(self,parent_sim):
-        # Return the densities of each point in the cell and their corresponding position in global memory
-        pass
+        self.X_c = X_cell
+        self.V_c = V_cell
 
-    def update_pressure(self,parent_sim):
-        # Return the pressure force of each point in the cell and its corresponding position in global memory.
-        pass
-
-    def update_viscosity(self,parent_sim):
-        # Return the viscosity force of each point in the cell and its corresponding position in global memory.
-        pass
+    def set_neighbors(self,X_neighbors,V_neighbors):
+        self.X_n = X_neighbors
+        self.V_n = V_neighbors    
 
 # ----------------------------------------------------------------------------
 # Iterating the Dynamics
@@ -431,18 +464,18 @@ class Cell:
        self.pressures = self.pressure_constant * (self.densities - self.rest_density)
        pass
 
-    def compute_symmetric_pressure(self):
+    def compute_symmetric_pressures(self):
         # Query all neighbors and take an average of the pairwise pressures.
         # NOTE: We need to have some indication that all pressures in the
         # simulation have been computed already (or at least for all neighbors)
+
+        # Compute the symmetric pressure so that the SPH pressure computation is symmetric.
+        symmetric_pressures = np.add.outer(self.pressures,self.pressures) / (2 * self.densities)
         pass
 
     def compute_pressure_forces(self):
         # combine pressure kernel gradient, distance gradient, and symmetric pressure
         # to obtain the pressure force.
-
-        # Compute the symmetric pressure so that the SPH pressure computation is symmetric.
-        symmetric_pressures = np.add.outer(self.pressures,self.pressures) / (2 * self.densities)
 
         # Weight the gradients by the symmetric pressures
         self.pressure_forces = np.zeros((self.num_pts,self.num_pts, self.dim))
@@ -482,5 +515,3 @@ class Cell:
         
         self.viscosity_forces = self.mass_constant * self.viscosity_constant * np.sum(self.viscosity_forces,axis=1) 
         pass
-    
-    
