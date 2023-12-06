@@ -100,12 +100,14 @@ class Simulation:
     
     def initialize_cells(self):
         """
-        Procedure to create a dictionary of all cells in the simulation linked
-        to their integer grid coordinates. Also constructs lookup dictionaries
-        from hash values to integer coordinates.
+        Helper function called in __init__().Procedure to create a dictionary 
+        of all cells in the simulation linked to their integer grid 
+        coordinates. Also constructs lookup dictionaries from hash values to
+        integer coordinates.
 
-        This procedure is to be called only once per resize.
+        This procedure will be  called only once per resize.
         """
+
         self.cell_bounds = np.ceil(self.bounds/self.eps)
         self.cell_x_coords = range(int(self.cell_bounds[0,0]) + 1)
         self.cell_y_coords = range(int(self.cell_bounds[0,1]) + 1)
@@ -129,33 +131,37 @@ class Simulation:
     def assign_particles(self):
 
         self.sort_particles()
+        self.get_nonempty_cells()
         self.map_particles()
         self.sort_neighbor_particles()
         self.map_neighbors()
 
     def sort_particles(self):
-                # map X to grid
-                self.G = self.eps * np.rint(self.X / self.eps)
-                # map grid coordinates to hash ID.
-                x_g = self.G[:,0]
-                y_g = self.G[:,1]
+        # map X to grid
+        self.G = self.eps * np.rint(self.X / self.eps)
+        # map grid coordinates to hash ID.
+        self.x_g = self.G[:,0]
+        self.y_g = self.G[:,1]
 
-                # Applying hash to G
-                hash_id = (self.x_g + self.y_g) * (self.x_g + self.y_g + 1) / 2 + self.y_g
-                # arg sort hash IDs
-                self.sort_indices = np.argsort(self.hash_id)
-                # sort hash_id
-                self.hash_id = self.hash_id[self.sort_indices]
-                self.X = self.X[self.sort_indices]
+        # Applying hash to G
+        self.hash_id = (self.x_g + self.y_g) * (self.x_g + self.y_g + 1) / 2 + self.y_g
+        # arg sort hash IDs
+        self.sort_indices = np.argsort(self.hash_id)
+        # sort hash_id
+        self.hash_id = self.hash_id[self.sort_indices]
+        self.X = self.X[self.sort_indices]
+
+    def get_nonempty_cells(self):
+        self.nonempty_cell_hashes = np.unique(self.hash_id)
 
     def map_particles(self):
-        # search unique hash ID
-        unique_hashes = np.unique(self.hash_id)
-        cuts = np.searchsorted(self.hash_id, unique_hashes)
+        cuts = np.searchsorted(self.hash_id, self.nonempty_cell_hashes)
         # for each unique hash ID:
-        for hash in unique_hashes:
+        for hash in self.nonempty_cell_hashes:
+            #Take out the
             X_cell = self.X[cuts[hash]:cuts[hash + 1]]
-            self.cells_dict[self.cells_hash_dict_inv[hash]].populate()
+            # Assign X_cell to the cell corresponding to hash
+            self.cells_dict[self.cells_hash_dict_inv[hash]].populate(X_cell)
             
     def sort_neighbor_particles(self):
         # Copy X num_neighbors times (num_neighbors depends on dim)
@@ -183,15 +189,17 @@ class Simulation:
         pass
     # ------------------------------------------------------------------------
     # ------------------------------------------------------------------------
-
+    
     def simulate(self):
         # --------------------------------------------------------------------
         # TODO:
         # --------------------------------------------------------------------
         # 1. For each possible Cell (computed from bounds)
         #   - Populate (Possibly involves a sorting of X?)
+        self.assign_particles()
         #   - Compute distances, density kernel, densities.
         #   - Return cell density to global density vector.
+
         # 2. For each possible Cell
         #   - Compute symmetric density (Requires the global density vector update)
         #   - Compute distance gradients
@@ -206,22 +214,22 @@ class Simulation:
         # 5. Resolve boundary collisions
         # 6. Update time.
         # --------------------------------------------------------------------
-        
+
         # Compute the pairwise distances
-        self.compute_distances()
-        self.compute_distance_gradients()
+        self.assign_compute_distances()
+        self.assign_compute_distance_gradients()
 
         # Compute the pressure
-        self.compute_density_kernel_matrix()
-        self.compute_densities()    
-        self.compute_pressures()
+        self.assign_compute_density_kernel_matrix()
+        self.assign_compute_densities()    
+        self.assign_compute_pressures()
         
-        self.compute_pressure_kernel_gradient()
-        self.compute_pressure_force()
+        self.assign_compute_pressure_kernel_gradient()
+        self.assign_compute_pressure_force()
         
         # Compute the viscosity
-        self.compute_viscosity_kernel_laplacian()
-        self.compute_viscosity_force()
+        self.assign_compute_viscosity_kernel_laplacian()
+        self.assign_compute_viscosity_force()
 
         # Compute the surface tension (not implemented)
         self.surface_tension_forces = np.zeros(self.X.shape)
@@ -250,87 +258,48 @@ class Simulation:
         self.t += self.dt
 
     #Density Estimation
-    def compute_distances(self): 
-        xy = self.X @ self.X.T # O(num_pts ** 2 * dim)
-        x2 = (self.X * self.X).sum(1) # O(num_pts * dim)
-        y2 = (self.X * self.X).sum(1) # O(num_pts * dim)
-        d2 = np.add.outer(x2,y2) - 2 * xy  # O(num_pts * dim)
-        d2.flat[::len(self.X)+1] = 0 # Rounding issues? Don't understand this.
+    def assign_compute_distances(self):
+        for hash in self.nonempty_cell_hashes:
+            self.cells_hash_dict[hash].compute_distances()
+
+    def assign_compute_density_kernel(self):
+        for hash in self.nonempty_cell_hashes:
+            self.cells_hash_dict[hash].compute_density_kernel()
+
+    def assign_compute_densities(self):
+        for hash in self.nonempty_cell_hashes:
+            self.cells_hash_dict[hash].compute_densitites()
+       
+    def assign_compute_pressures(self):
+        for hash in self.nonempty_cell_hashes:
+            self.cells_hash_dict[hash].compute_pressures()
+    
+    def assign_compute_distance_gradients(self):
+        for hash in self.nonempty_cell_hashes:
+            self.cells_hash_dict[hash].compute_distance_gradients()
         
-        # Another crappy hack to fix negative distances.
-        d2[d2<=0] = 3 * np.finfo(float).eps
-
-        self.distances = np.sqrt(d2)  # O (num_pts * dim)
-
-    def compute_density_kernel_matrix(self):
-        self.density_kernel_matrix = 315/(64 * np.pi * self.eps ** 9) * (self.eps ** 2 - self.distances ** 2) ** 3
-        self.density_kernel_matrix[self.distances > self.eps] = 0
-
-    def compute_densities(self):
-        #Compute densities using mass weighted kernel density estimation
-        self.densities = self.mass_constant * np.sum(self.density_kernel_matrix, axis=0)
-
-    def compute_pressures(self):
-        self.pressures = self.pressure_constant * (self.densities - self.rest_density)
+    def assign_compute_pressure_kernel_gradients(self):
+        for hash in self.nonempty_cell_hashes:
+            self.cells_hash_dict[hash].compute_pressure_kernel_gradient()
         
-
-    def compute_distance_gradients(self):
-        self.distance_gradients = np.zeros((self.num_pts,self.num_pts,self.dim))
-        # We make an artificial change here to avoid division by zero on the diagonal.
-        modified_distances =  self.distances + np.eye(self.num_pts)
-        
-        # Another crappy hack to keep things from breaking
-        modified_distances[modified_distances <=0] = 3 * np.finfo(float).eps
-
-        for i in range(self.dim):
-            self.distance_gradients[:,:,i] =  np.subtract.outer(self.X[:,i],self.X[:,i]) / modified_distances
-
-    def compute_pressure_kernel_gradient(self):
-        # First compute the gradient of the shape function using distance = distance ** 2.
-        kernel_derivative = 45 * (self.eps - self.distances) ** 2
-        # Assume that derivative is zero outside the support of the shape function.
-        kernel_derivative[self.distances>self.eps] = 0
-        
-        # Compute the total derivative from the input distance gradients and the computed
-        # kernel gradient.
-        self.kernel_gradients = np.zeros((self.num_pts,self.num_pts,self.dim))
-        
-        for i in range(self.dim):
-            self.kernel_gradients[:,:,i] = kernel_derivative * self.distance_gradients[:,:,i]
-
-    def compute_pressure_force(self):
-        # Compute the symmetric pressure so that the SPH pressure computation is symmetric.
-        symmetric_pressures = np.add.outer(self.pressures,self.pressures) / (2 * self.densities)
-
-        # Weight the gradients by the symmetric pressures
-        self.pressure_forces = np.zeros((self.num_pts,self.num_pts, self.dim))
-        
-        for i in range(self.dim):
-            self.pressure_forces[:,:,i] = symmetric_pressures.T * self.kernel_gradients[:,:,i]
-
-        #sum over one axis to obtain estimate for the pressure forces at each point.
-        self.pressure_forces = self.mass_constant *  np.sum(self.pressure_forces,axis=1)
+    def assign_compute_pressure_forces(self):
+        for hash in self.nonempty_cell_hashes:
+            self.cells_hash_dict[hash].compute_pressure_forces()
 
     # Viscosity Estimation
-    def compute_viscosity_kernel_matrix(self):
-        self.viscosity_kernel_matrix = 15/(2 * np.pi * self.eps ** 3) * ((- self.distances ** 3)/(2 * self.eps ** 3) +  (self.distances ** 2) / self.eps ** 2 + self.eps / (2 * self.distances) - 1)
-        self.viscosity_kernel_matrix[self.distances > self.eps] = 0
-        
+    def assign_compute_viscosity_kernel(self):
+        for hash in self.nonempty_cell_hashes:
+            self.cells_hash_dict[hash].compute_viscosity_kernel()        
 
-    def compute_viscosity_kernel_laplacian(self):
-        self.viscosity_kernel_laplacian = 45 / (np.pi * self.eps ** 6) * (self.eps - self.distances)
-        
+    def assign_compute_viscosity_kernel_laplacian(self):
+        for hash in self.nonempty_cell_hashes:
+            self.cells_hash_dict[hash].compute_viscosity_kernel_laplacian()      
+        pass
 
-    def compute_viscosity_force(self):
-        symmetric_velocities = np.zeros((self.num_pts,self.num_pts,self.dim))
-        self.viscosity_forces = np.zeros((self.num_pts,self.num_pts,self.dim))
+    def assign_compute_viscosity_force(self):
+        for hash in self.nonempty_cell_hashes:
+            self.cells_hash_dict[hash].compute_viscosity_forces()
         
-        for i in range(self.dim):
-            symmetric_velocities[:,:,i] = np.subtract.outer(self.V[:,i],self.V[:,i]) / self.densities
-            self.viscosity_forces[:,:,i] = symmetric_velocities[:,:,i] * self.viscosity_kernel_laplacian
-        
-        self.viscosity_forces = self.mass_constant * self.viscosity_constant * np.sum(self.viscosity_forces,axis=1) 
-
     # Collision Detection
     def apply_boundary_collisions(self):
         for i in range(self.dim):
@@ -401,30 +370,65 @@ class Cell:
     def compute_distances(self):
         # compute the pairwise distances between points in the cell and points in and
         # neighboring the cell.
+
+        xy = self.X @ self.X.T # O(num_pts ** 2 * dim)
+        x2 = (self.X * self.X).sum(1) # O(num_pts * dim)
+        y2 = (self.X * self.X).sum(1) # O(num_pts * dim)
+        d2 = np.add.outer(x2,y2) - 2 * xy  # O(num_pts * dim)
+        d2.flat[::len(self.X)+1] = 0 # Rounding issues? Don't understand this.
+        
+        # Another crappy hack to fix negative distances.
+        d2[d2<=0] = 3 * np.finfo(float).eps
+
+        self.distances = np.sqrt(d2)  # O (num_pts * dim)
         pass
 
     def compute_distance_gradients(self):
         # compute the gradients of the distance function between points in cell and 
-        # distance 
+        # distance
+        self.distance_gradients = np.zeros((self.num_pts,self.num_pts,self.dim))
+        # We make an artificial change here to avoid division by zero on the diagonal.
+        modified_distances =  self.distances + np.eye(self.num_pts)
+        
+        # Another crappy hack to keep things from breaking
+        modified_distances[modified_distances <=0] = 3 * np.finfo(float).eps
+
+        for i in range(self.dim):
+            self.distance_gradients[:,:,i] =  np.subtract.outer(self.X[:,i],self.X[:,i]) / modified_distances
         pass
 
     def compute_density_kernel(self):
         # compute the density kernel matrix for all points in X. Kernel matrix
         # not necessarily square. One axis tracks points in cell, other tracks
         # points in cell + points in neighbor cells.
+        self.density_kernel_matrix = 315/(64 * np.pi * self.eps ** 9) * (self.eps ** 2 - self.distances ** 2) ** 3
+        self.density_kernel_matrix[self.distances > self.eps] = 0
         pass
     
-    def compute_density(self):
+    def compute_densities(self):
         # Sum over the axis with neighbor points to compute density
+        self.densities = self.mass_constant * np.sum(self.density_kernel_matrix, axis=0)
         pass
 
-    def compute_pressure_kernel_gradient(self):
+    def compute_pressure_kernel_gradients(self):
         # Compute the pressure kernel gradient (only the shape function.)
+        # First compute the gradient of the shape function using distance = distance ** 2.
+        kernel_derivative = 45 * (self.eps - self.distances) ** 2
+        # Assume that derivative is zero outside the support of the shape function.
+        kernel_derivative[self.distances>self.eps] = 0
+        
+        # Compute the total derivative from the input distance gradients and the computed
+        # kernel gradient.
+        self.kernel_gradients = np.zeros((self.num_pts,self.num_pts,self.dim))
+        
+        for i in range(self.dim):
+            self.kernel_gradients[:,:,i] = kernel_derivative * self.distance_gradients[:,:,i]
         pass
 
     def compute_pressures(self):
        # Using the Simulation variables rest_density and pressure_constant, 
        # compute the pressure from the density
+       self.pressures = self.pressure_constant * (self.densities - self.rest_density)
        pass
 
     def compute_symmetric_pressure(self):
@@ -433,17 +437,32 @@ class Cell:
         # simulation have been computed already (or at least for all neighbors)
         pass
 
-    def compute_pressure_force(self):
+    def compute_pressure_forces(self):
         # combine pressure kernel gradient, distance gradient, and symmetric pressure
         # to obtain the pressure force.
+
+        # Compute the symmetric pressure so that the SPH pressure computation is symmetric.
+        symmetric_pressures = np.add.outer(self.pressures,self.pressures) / (2 * self.densities)
+
+        # Weight the gradients by the symmetric pressures
+        self.pressure_forces = np.zeros((self.num_pts,self.num_pts, self.dim))
+        
+        for i in range(self.dim):
+            self.pressure_forces[:,:,i] = symmetric_pressures.T * self.kernel_gradients[:,:,i]
+
+        #sum over one axis to obtain estimate for the pressure forces at each point.
+        self.pressure_forces = self.mass_constant *  np.sum(self.pressure_forces,axis=1)
         pass
 
     def compute_viscosity_kernel(self):
-        # Compute the viscosity kernel matrix in analogous fashion to density kernel.
+        # Compute the viscosity kernel matrix in analogous fashion to density kernel.                    
+        self.viscosity_kernel_matrix = 15/(2 * np.pi * self.eps ** 3) * ((- self.distances ** 3)/(2 * self.eps ** 3) +  (self.distances ** 2) / self.eps ** 2 + self.eps / (2 * self.distances) - 1)
+        self.viscosity_kernel_matrix[self.distances > self.eps] = 0
         pass
 
     def compute_viscosity_kernel_laplacian(self):
         # Compute the viscosity kernel matrix in analogous fashion to density kernel.
+        self.viscosity_kernel_laplacian = 45 / (np.pi * self.eps ** 6) * (self.eps - self.distances)
         pass
     
     def compute_symmetric_velocities(self):
@@ -454,4 +473,14 @@ class Cell:
 
     def compute_viscosity_force(self):
         # Compute the velocity force
+        symmetric_velocities = np.zeros((self.num_pts,self.num_pts,self.dim))
+        self.viscosity_forces = np.zeros((self.num_pts,self.num_pts,self.dim))
+        
+        for i in range(self.dim):
+            symmetric_velocities[:,:,i] = np.subtract.outer(self.V[:,i],self.V[:,i]) / self.densities
+            self.viscosity_forces[:,:,i] = symmetric_velocities[:,:,i] * self.viscosity_kernel_laplacian
+        
+        self.viscosity_forces = self.mass_constant * self.viscosity_constant * np.sum(self.viscosity_forces,axis=1) 
         pass
+    
+    
