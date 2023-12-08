@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.spatial.distance import cdist
 
 # TODO: We need to find a way to fix the numerical errors breaking things in
 # 1) distance computation sqrt(negative number)
@@ -109,11 +110,11 @@ class Simulation:
         """
 
         self.cell_bounds = np.ceil(self.bounds/self.eps)
-        self.cell_x_coords = range(int(self.cell_bounds[0,0]) + 1)
-        self.cell_y_coords = range(int(self.cell_bounds[0,1]) + 1)
+        self.cell_x_coords = range(-1,int(self.cell_bounds[0,0]) + 1)
+        self.cell_y_coords = range(-1,int(self.cell_bounds[0,1]) + 1)
 
         #dictionary which maps integer multiples of epsilon to the coresponding Cell
-        self.cells_dict = { (x,y) : Cell((x,y)) 
+        self.cells_loc_dict = { (x,y) : Cell((x,y)) 
                            for x in self.cell_x_coords 
                            for y in self.cell_y_coords}
         
@@ -124,7 +125,8 @@ class Simulation:
         self.cells_hash_dict_inv = { h : (x,y) for (x,y),h 
                                     in self.cells_hash_dict.items() }
         
-
+        # Dictionary mapping hash values to corresponding Cell
+        self.cells_dict = { k : self.cells_loc_dict[v] for k,v in self.cells_hash_dict_inv.items()}
 
         
     # ------------------------------------------------------------------------    
@@ -132,11 +134,11 @@ class Simulation:
     # ------------------------------------------------------------------------    
 
     def assign_particles(self):
-
         self.sort_particles()
         self.get_nonempty_cells()
         self.map_particles()
         self.sort_neighbor_particles()
+        self.get_nonempty_neighbors()
         self.map_neighbors()
 
     def sort_particles(self):
@@ -153,8 +155,10 @@ class Simulation:
         # sort hash_id
         self.hash_id = self.hash_id[self.sort_indices]
         
-        self.X = self.X[self.sort_indices]
-        self.V = self.V[self.sort_indices]
+        self.X = self.X[self.sort_indices,:]
+        # We need this sort for the later neighbors computation
+        self.G = self.G[self.sort_indices,:]
+        self.V = self.V[self.sort_indices,:]
 
     def get_nonempty_cells(self):
         self.nonempty_cell_hashes = np.unique(self.hash_id)
@@ -173,32 +177,79 @@ class Simulation:
             V_cell = self.V[self.cuts[i]:self.cuts[i + 1],:]
              
             # Assign X_cell to the cell corresponding to hash
-            self.cells_dict[self.cells_hash_dict_inv[hash]].populate(X_cell,V_cell)
+            self.cells_dict[hash].populate(X_cell,V_cell)
 
     def sort_neighbor_particles(self):
-        # Copy X num_neighbors times (num_neighbors depends on dim)
-        # This copy is to book keep hash values
-        
+
+        self.num_neighbors = 9
+
+        # generate a list of direction vectors for the grid.
+        eps_e1 = np.arange(2)
+        eps_e2 = np.arange(1,-1,-1)
+
+        ul = -1 * eps_e1 + eps_e2
+        um = eps_e2
+        ur = eps_e1 + eps_e2
+        ml = -1 * eps_e1
+        mm = np.zeros(2)
+        mr = eps_e1
+        bl = -1 * eps_e1 + -1 * eps_e2
+        bm = -1 * eps_e2
+        br = eps_e1 + -1* eps_e2
+
+        direction_vectors = np.array([ul,um,ur,ml,mm,mr,bl,bm,br])
+
         # Copy X num_neighbors times (num_neighbors depends on dim)
         # This copy is to book keep positions.
+        X_copies = np.repeat(self.X[:, :, np.newaxis], self.num_neighbors, axis=2)
+        G_copies = np.repeat(self.G[:, :, np.newaxis], self.num_neighbors, axis=2)
+        V_copies = np.repeat(self.V[:, :, np.newaxis], self.num_neighbors, axis=2)
+        
+        # collapse neighboring grid points to grid points offset by each neighboring direction.
+        # The 3.1 is just to deal with rounding issues.
+        cells_copies = (3.1 * np.rint((G_copies + direction_vectors.T) / 3.1) + direction_vectors.T).astype(int)
+        
+        # Flatten both X values and neighbor copies in the same way
+        cells_copies = cells_copies.transpose(2,0,1).reshape(-1,self.dim)
+        self.X_neighbors = X_copies.transpose(2,0,1).reshape(-1,self.dim)
+        self.V_neighbors = V_copies.transpose(2,0,1).reshape(-1,self.dim)
+        
+        # Apply hash to full_cells
+        x_g = cells_copies[:,0]
+        y_g = cells_copies[:,1]
+        self.neighbors_hash_id = ((x_g + y_g) * (x_g + y_g + 1) / 2 + y_g).astype(int)
+        
+        # argsort hash values
+        self.neighbors_sort_indices = np.argsort(self.neighbors_hash_id)
+        
+        # sort X and V copies with the arg
+        self.X_neighbors = self.X_neighbors[self.neighbors_sort_indices,:]
+        self.V_neighbors = self.V_neighbors[self.neighbors_sort_indices,:]
 
-        # map hash values X copies to grid
-        # for each copy of hash values X:
-        #   collapse neighboring grid points to grid points offset by each neighboring direction.
+        # sort hash value
+        self.neighbors_hash_id = self.neighbors_hash_id[self.neighbors_sort_indices]
 
-        # flatten hash values X copies to a 2d array
-        # flatten positions X copies to a 2d array in the exact same way
-
-        # map hash values X copies to hash ID
-        # argsort hash values X copies
-
-        # sort position X copies with the arg
-        pass
-
+    def get_nonempty_neighbors(self):
+        self.nonempty_cell_neighbors_hashes = np.unique(self.neighbors_hash_id)
     def map_neighbors(self):
-        # for each unique hash ID for just X:
-        #   cell.assign_neighbors(hash_ID,X_cell) (assign X_cell and all neighboring X_cell to neighbors)
-        pass
+        # for each unique hash ID in neighbors
+
+        # cell.assign_neighbors(hash_ID,X_cell) (assign X_cell and all neighboring X_cell to neighbors)
+        self.neighbors_cuts = np.searchsorted(self.neighbors_hash_id, self.nonempty_cell_neighbors_hashes)
+        # needs to add the endpoint
+        num_duplicated_pts = self.num_neighbors * self.num_pts - 1
+        self.neighbors_cuts = np.append(self.neighbors_cuts,num_duplicated_pts)
+        
+        # TODO Something is broken here. Too many particles assigned to first cell.
+        for i in range(self.nonempty_cell_neighbors_hashes.shape[0]):
+            hash = self.nonempty_cell_neighbors_hashes[i]
+            X_cell_neighbors = self.X_neighbors[self.neighbors_cuts[i]:self.neighbors_cuts[i + 1],:]
+            V_cell_neighbors = self.V_neighbors[self.neighbors_cuts[i]:self.neighbors_cuts[i + 1],:]
+             
+            # Assign X_cell to the cell corresponding to hash
+            self.cells_dict[hash].set_neighbors(X_cell_neighbors,
+                                                V_cell_neighbors)
+
     # ------------------------------------------------------------------------
     # ------------------------------------------------------------------------
     
@@ -279,46 +330,46 @@ class Simulation:
 # ----------------------------------------------------------------------------
     # Density Estimation
     def assign_compute_distances(self):
-        for hash in self.nonempty_cell_hashes:
-            self.cells_hash_dict[hash].compute_distances()
+        for i in self.nonempty_cell_hashes:
+            print(i)
+            self.cells_dict[i].compute_distances()
 
     def assign_compute_density_kernel(self):
         for hash in self.nonempty_cell_hashes:
-            self.cells_hash_dict[hash].compute_density_kernel()
+            self.cells_dict[hash].compute_density_kernel()
 
     def assign_compute_densities(self):
         for hash in self.nonempty_cell_hashes:
-            self.cells_hash_dict[hash].compute_densitites()
+            self.cells_dict[hash].compute_densitites()
        
     def assign_compute_pressures(self):
         for hash in self.nonempty_cell_hashes:
-            self.cells_hash_dict[hash].compute_pressures()
+            self.cells_dict[hash].compute_pressures()
 
     def assign_compute_symmetric_pressures(self):
         for hash in self.nonempty_cell_hashes:
-            self.cells_hash_dict[hash].compute_symmetric_pressures()            
+            self.cells_dict[hash].compute_symmetric_pressures()            
     
     def assign_compute_distance_gradients(self):
         for hash in self.nonempty_cell_hashes:
-            self.cells_hash_dict[hash].compute_distance_gradients()
+            self.cells_dict[hash].compute_distance_gradients()
         
     def assign_compute_pressure_kernel_gradients(self):
         for hash in self.nonempty_cell_hashes:
-            self.cells_hash_dict[hash].compute_pressure_kernel_gradient()
+            self.cells_dict[hash].compute_pressure_kernel_gradient()
         
     def assign_compute_pressure_forces(self):
         for hash in self.nonempty_cell_hashes:
-            self.cells_hash_dict[hash].compute_pressure_forces()
+            self.cells_dict[hash].compute_pressure_forces()
 
     # Viscosity Estimation
     def assign_compute_viscosity_kernel(self):
         for hash in self.nonempty_cell_hashes:
-            self.cells_hash_dict[hash].compute_viscosity_kernel()        
+            self.cells_dict[hash].compute_viscosity_kernel()        
 
     def assign_compute_viscosity_kernel_laplacian(self):
         for hash in self.nonempty_cell_hashes:
-            self.cells_hash_dict[hash].compute_viscosity_kernel_laplacian()      
-
+            self.cells_dict[hash].compute_viscosity_kernel_laplacian()      
 
     def assign_compute_viscosity_force(self):
         for hash in self.nonempty_cell_hashes:
@@ -401,21 +452,8 @@ class Cell:
 # ----------------------------------------------------------------------------
 
     def compute_distances(self):
-        # compute the pairwise distances between points in the cell and points in and
-        # neighboring the cell.
-
-        xy = self.X @ self.X.T # O(num_pts ** 2 * dim)
-        x2 = (self.X * self.X).sum(1) # O(num_pts * dim)
-        y2 = (self.X * self.X).sum(1) # O(num_pts * dim)
-        d2 = np.add.outer(x2,y2) - 2 * xy  # O(num_pts * dim)
-        d2.flat[::len(self.X)+1] = 0 # Rounding issues? Don't understand this.
-        
-        # Another crappy hack to fix negative distances.
-        d2[d2<=0] = 3 * np.finfo(float).eps
-
-        self.distances = np.sqrt(d2)  # O (num_pts * dim)
-        pass
-
+        self.distances = cdist(self.X_c,self.X_n)
+    
     def compute_distance_gradients(self):
         # compute the gradients of the distance function between points in cell and 
         # distance

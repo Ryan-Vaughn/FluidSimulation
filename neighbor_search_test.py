@@ -77,7 +77,6 @@ cuts = np.searchsorted(sorted_keys,unique_keys)
 
 
 num_neighbors = 9
-neighbors = np.repeat(X[:, :, np.newaxis], num_neighbors, axis=2)
 
 direction_vectors = np.array([ul,um,ur,ml,mm,mr,bl,bm,br])
 
@@ -87,5 +86,5 @@ X_copies = np.repeat(X[:, :, np.newaxis], num_neighbors, axis=2)
 cells_copies = np.repeat(cells[:, :, np.newaxis], num_neighbors, axis=2)
 
 neighbors_copies = 3 * eps * np.rint((X_copies + eps * direction_vectors.T) / (3 * eps)) - eps * direction_vectors.T
-full_neighbors = neighbors.transpose(2,0,1).reshape(-1,dim)
+full_neighbors = neighbors_copies.transpose(2,0,1).reshape(-1,dim)
 full_Xs = X_copies.transpose(2,0,1).reshape(-1,dim)
