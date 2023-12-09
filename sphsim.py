@@ -13,14 +13,12 @@ class Simulation:
     initial_velocities = 'Stationary'
     
     margin = .5
-
     mass_constant = 3
     gravity_constant = 9.8
     eps = .3
     rest_density = 1
     pressure_constant = 1
     viscosity_constant = .002
-
     dt = 1/30
 
     
@@ -166,7 +164,7 @@ class Simulation:
     def map_particles(self):
         self.cuts = np.searchsorted(self.hash_id, self.nonempty_cell_hashes)
         # needs to add the endpoint
-        self.cuts = np.append(self.cuts,self.num_pts - 1)
+        self.cuts = np.append(self.cuts,self.num_pts)
         
         # for each unique hash ID:
         
@@ -207,7 +205,7 @@ class Simulation:
         
         # collapse neighboring grid points to grid points offset by each neighboring direction.
         # The 3.1 is just to deal with rounding issues.
-        cells_copies = (3.1 * np.rint((G_copies + direction_vectors.T) / 3.1) + direction_vectors.T).astype(int)
+        cells_copies = np.rint((G_copies + direction_vectors.T) / 3)
         
         # Flatten both X values and neighbor copies in the same way
         cells_copies = cells_copies.transpose(2,0,1).reshape(-1,self.dim)
@@ -231,16 +229,14 @@ class Simulation:
 
     def get_nonempty_neighbors(self):
         self.nonempty_cell_neighbors_hashes = np.unique(self.neighbors_hash_id)
+    
     def map_neighbors(self):
-        # for each unique hash ID in neighbors
-
-        # cell.assign_neighbors(hash_ID,X_cell) (assign X_cell and all neighboring X_cell to neighbors)
         self.neighbors_cuts = np.searchsorted(self.neighbors_hash_id, self.nonempty_cell_neighbors_hashes)
         # needs to add the endpoint
-        num_duplicated_pts = self.num_neighbors * self.num_pts - 1
+        num_duplicated_pts = self.num_neighbors * self.num_pts
         self.neighbors_cuts = np.append(self.neighbors_cuts,num_duplicated_pts)
         
-        # TODO Something is broken here. Too many particles assigned to first cell.
+    
         for i in range(self.nonempty_cell_neighbors_hashes.shape[0]):
             hash = self.nonempty_cell_neighbors_hashes[i]
             X_cell_neighbors = self.X_neighbors[self.neighbors_cuts[i]:self.neighbors_cuts[i + 1],:]
