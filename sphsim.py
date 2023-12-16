@@ -1,39 +1,71 @@
 import numpy as np
 from scipy.spatial.distance import cdist
 
+from attrs import define, field
+from attrs.setters import frozen
+
 # TODO: We need to find a way to fix the numerical errors breaking things in
 # 1) distance computation sqrt(negative number)
 # 2) distance gradient computations (division by zero)
 
+@define
 class Simulation:
+    ''' Class used to manage backend computation for SPH simulations.
     
-    # Class variables that specify the inital distribution and constants.
-    
-    initial_dataset = 'Gaussian'
-    initial_velocities = 'Stationary'
-    
-    margin = .5
-    mass_constant = 3
-    gravity_constant = 9.8
-    eps = .3
-    rest_density = 1
-    pressure_constant = 1
-    viscosity_constant = .002
-    dt = 1/30
+    This class passes information to/from Cell objects which are used to
+    compute physical quantites that only depend on local data (within a
+    small neighborhood determined by the parameter eps.)
 
+    Parameters
+    ----------
     
-    def __init__(self,num_pts,dim):
-        
-        self.num_pts = num_pts
-        self.dim = dim
-        self.t = 0
+    Frozen Parameters
+    ----------
+    dim : int
+        Dimension of the ambient space of the simulation. Required to be
+        2 (or later 3.)
 
+    num_pts : int
+        Number of total particles to be simulated.
+
+    Adjustable Parameters
+    ----------
+    mass_constant: float
+    
+    gravity_constant: float
+    
+    rest_density: float 
+    
+    pressure_constant: float 
+    
+    viscosity_constant: float
+
+    eps: float 
+    
+    t: float
+    
+    dt: float
+    
+    '''
+
+    num_pts: int = field(on_setattr=frozen)
+    dim: int = field(on_setattr=frozen)
+    
+    mass_constant: float = 3
+    gravity_constant: float = 9.8
+    rest_density: float = 1
+    pressure_constant: float = 1
+    viscosity_constant: float = 0.02
+
+    eps: float = 0.3
+    t: float = 0
+    dt: float = 1/30
+
+    def __post_init__(self) -> None:
         # Generate points, bounds, intial velocity
         self.populate()
         # Set initial bounding behavior
         self.initialize_bounds()
-        # Set instance constants to the default class variables.
-        self.initialize_constants()
         #Initialize grid (must have been populated already)
         self.initialize_cells()
 
@@ -52,59 +84,21 @@ class Simulation:
             self.V =  np.zeros((self.num_pts,self.dim))
         else:
             self.V =  np.zeros((self.num_pts,self.dim))
-        return self
-    
     def initialize_bounds(self):
         # Set initial boundaries based on the initial points.
         self.bounds = np.zeros((2,self.dim))
+        margin = .5
         for i in range(self.dim):
             upper_bound = np.max(self.X[:,i])
 
-            self.bounds[0,i] = upper_bound + Simulation.margin
+            self.bounds[0,i] = upper_bound + margin
             self.bounds[1,i] = 0
 
-        return self
-    
-    def initialize_constants(self):
-        # Set all constant parameters according to the class variables. This occurs at initialization only.
-        self.mass_constant = Simulation.mass_constant
-        self.gravity_constant = Simulation.gravity_constant
-        self.eps = Simulation.eps
-        self.rest_density = Simulation.rest_density
-        self.pressure_constant = Simulation.pressure_constant    
-        self.viscosity_constant = Simulation.viscosity_constant
-        self.dt = Simulation.dt
-
-    def update_constants(self,
-                      mass_constant,
-                      gravity_constant,
-                      eps,
-                      rest_density,
-                      pressure_constant,
-                      viscosity_constant,
-                      dt):
-        
-        # Method to update the constants of a simulation without resetting the simulation.
-        self.mass_constant = mass_constant
-        self.gravity_constant = gravity_constant
-        self.eps = eps
-        self.rest_density = rest_density
-        self.pressure_constant = pressure_constant    
-        self.viscosity_constant = viscosity_constant
-        self.dt = dt
-
-    def update_bounds(self):
-        # Method to adjust the bounds on the fly.
-        pass
-    
     def initialize_cells(self):
         """
-        Helper function called in __init__().Procedure to create a dictionary 
-        of all cells in the simulation linked to their integer grid 
-        coordinates. Also constructs lookup dictionaries from hash values to
-        integer coordinates.
-
-        This procedure will be  called only once per resize.
+        Procedure to create a dictionary  of all cells in the simulation 
+        linked to their integer grid coordinates. Also constructs lookup
+        dictionaries from hash values to integer coordinates.
         """
 
         self.cell_bounds = np.ceil(self.bounds/self.eps)
@@ -127,10 +121,6 @@ class Simulation:
         self.cells_dict = { k : self.cells_loc_dict[v] for k,v in self.cells_hash_dict_inv.items()}
 
         
-    # ------------------------------------------------------------------------    
-    # Helper Functions for initialize_cells
-    # ------------------------------------------------------------------------    
-
     def assign_particles(self):
         self.sort_particles()
         self.get_nonempty_cells()
@@ -178,8 +168,7 @@ class Simulation:
             self.cells_dict[hash].populate(X_cell,V_cell)
 
     def sort_neighbor_particles(self):
-
-        self.num_neighbors = 9
+        num_neighbors = 9
 
         # generate a list of direction vectors for the grid.
         eps_e1 = np.arange(2)
@@ -199,9 +188,9 @@ class Simulation:
 
         # Copy X num_neighbors times (num_neighbors depends on dim)
         # This copy is to book keep positions.
-        X_copies = np.repeat(self.X[:, :, np.newaxis], self.num_neighbors, axis=2)
-        G_copies = np.repeat(self.G[:, :, np.newaxis], self.num_neighbors, axis=2)
-        V_copies = np.repeat(self.V[:, :, np.newaxis], self.num_neighbors, axis=2)
+        X_copies = np.repeat(self.X[:, :, np.newaxis], num_neighbors, axis=2)
+        G_copies = np.repeat(self.G[:, :, np.newaxis], num_neighbors, axis=2)
+        V_copies = np.repeat(self.V[:, :, np.newaxis], num_neighbors, axis=2)
         
         # collapse neighboring grid points to grid points offset by each neighboring direction.
         # The 3.1 is just to deal with rounding issues.
@@ -231,9 +220,11 @@ class Simulation:
         self.nonempty_cell_neighbors_hashes = np.unique(self.neighbors_hash_id)
     
     def map_neighbors(self):
+        num_neighbors = 9
+
         self.neighbors_cuts = np.searchsorted(self.neighbors_hash_id, self.nonempty_cell_neighbors_hashes)
         # needs to add the endpoint
-        num_duplicated_pts = self.num_neighbors * self.num_pts
+        num_duplicated_pts = num_neighbors * self.num_pts
         self.neighbors_cuts = np.append(self.neighbors_cuts,num_duplicated_pts)
         
     
@@ -405,7 +396,6 @@ class Simulation:
             # set force in the boundary direction on the point to zero
             self.forces[:,i][too_large | too_small] = 0
 
-    
 class Cell:
     '''
     The Cell class is used to handle any processing that only requires local
@@ -548,4 +538,3 @@ class Cell:
             self.viscosity_forces[:,:,i] = symmetric_velocities[:,:,i] * self.viscosity_kernel_laplacian
         
         self.viscosity_forces = self.mass_constant * self.viscosity_constant * np.sum(self.viscosity_forces,axis=1) 
-        pass
