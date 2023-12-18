@@ -109,7 +109,7 @@ class Simulation:
         self.cells_loc_dict = { (x,y) : Cell((x,y)) 
                            for x in self.cell_x_coords 
                            for y in self.cell_y_coords}
-        
+
         self.cells_hash_dict = { (x,y) :  int((x + y) * (x + y + 1) / 2 + y)
                            for x in self.cell_x_coords 
                            for y in self.cell_y_coords}
@@ -452,20 +452,17 @@ class Cell:
 
         for i in range(self.dim):
             self.distance_gradients[:,:,i] =  np.subtract.outer(self.X[:,i],self.X[:,i]) / modified_distances
-        pass
-
+   
     def compute_density_kernel(self):
         # compute the density kernel matrix for all points in X. Kernel matrix
         # not necessarily square. One axis tracks points in cell, other tracks
         # points in cell + points in neighbor cells.
         self.density_kernel_matrix = 315/(64 * np.pi * self.eps ** 9) * (self.eps ** 2 - self.distances ** 2) ** 3
         self.density_kernel_matrix[self.distances > self.eps] = 0
-        pass
     
     def compute_densities(self):
         # Sum over the axis with neighbor points to compute density
         self.densities = self.mass_constant * np.sum(self.density_kernel_matrix, axis=0)
-        pass
 
     def compute_pressure_kernel_gradients(self):
         # Compute the pressure kernel gradient (only the shape function.)

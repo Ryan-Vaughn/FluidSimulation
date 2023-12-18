@@ -54,7 +54,7 @@ class Manager(ABC):
     """
     Abstract class for Manager.
 
-    Managers determine the strategy for computing the total force on  the
+    Managers determine the strategy for computing the total force on the
     particles.
     """
     @abstractmethod
