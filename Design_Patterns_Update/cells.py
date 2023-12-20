@@ -18,10 +18,12 @@ class Cell(ABC):
 
         self.x_c = None
         self.v_c = None
+        self.masses_c = None
         self.num_pts = None
 
         self.x_n = None
         self.v_n = None
+        self.masses_n = None
         self.num_n_pts = None
 
         self.eps = None
@@ -31,23 +33,25 @@ class Cell(ABC):
         self.pressure_gradients = None
         self.density_kernel_matrix = None
 
-    def populate(self,x: npt.NDArray ,v: npt.NDArray) -> None:
+    def populate(self, x: npt.NDArray, v: npt.NDArray,masses: npt.NDArray) -> None:
         """
         Method to load position and velocity of particles in the cell into
         memory.
         """
         self.x_c = x
         self.v_c = v
+        self.masses_c = masses
 
         self.num_pts, _ = self.x_c.shape()
 
-    def populate_neighbors(self, x: npt.NDArray, v: npt.NDArray) -> None:
+    def populate_neighbors(self, x: npt.NDArray, v: npt.NDArray,masses: npt.NDArray) -> None:
         """
         Method to load position and velocity of particles in neighboring cells
         into memory.
         """
         self.x_n = x
         self.v_n = v
+        self.masses_n = masses
 
         self.num_n_pts, _ = self.x_n.shape()
 

@@ -13,8 +13,9 @@ def test_populate():
     cell = CellSPH2D()
     x_c = np.random.randn(num_pts,2)
     v_c = np.random.randn(num_pts,2)
-    cell.populate(x_c,v_c)
-    assert (cell.x_c, cell.v_c) == (x_c, v_c)
+    masses_c = np.random.randn(num_pts)
+    cell.populate(x_c,v_c,masses_c)
+    assert (cell.x_c, cell.v_c,cell.masses_c) == (x_c, v_c,masses_c)
 
 def test_populate_neighbors():
     """
@@ -25,8 +26,9 @@ def test_populate_neighbors():
     cell = CellSPH2D()
     x_n = np.random.randn(num_pts,2)
     v_n = np.random.randn(num_pts,2)
-    cell.populate_neighbors(x_n,v_n)
-    assert (cell.x_n, cell.v_n) == (x_n, v_n)    
+    masses_n = np.random.randn(num_pts)
+    cell.populate_neighbors(x_n,v_n,masses_n)
+    assert (cell.x_n, cell.v_n,cell.masses_n) == (x_n, v_n,masses)    
 
 def test_compute_distances():
     """
