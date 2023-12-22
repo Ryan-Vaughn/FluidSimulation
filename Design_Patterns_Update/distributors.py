@@ -1,12 +1,19 @@
+"""
+Module for distributor classes. Distributors are in charge of allocating
+particle data to different cells. The cells compute quantites which are
+only dependent on local information (particles that are close to one 
+another) and pass the data back to the distributor.
+
+"""
 from abc import ABC, abstractmethod
 import dataclasses
 import numpy as np
 from numpy.typing import NDArray
-from cells import Cell,CellSPH2D
+from cells import Cell
 
 
 @dataclasses.dataclass
-class SPH2DData():
+class SPHInputData():
     """
     Data class to book keep all the internal data of the Distributor.
 
@@ -48,16 +55,16 @@ class DistributorSPH2D(Distributor):
 
     """
 
-    def __init__(self,physical_data,meta_data):        
+    def __init__(self,physical_data,meta_data):
         self.dim = 2
         _, self.eps,self.bounds = meta_data
-        
+
         # Data storage for cells
-        self.c = SPH2DData()
+        self.c = SPHInputData()
         self.c.id_cells_dict = self.initialize_lookup(*meta_data)
-        
+
         # Data storage for neighboring cells.
-        self.n = SPH2DData()
+        self.n = SPHInputData()
         self.n.id_cells_dict = self.initialize_lookup(*meta_data)
 
         # Generate data for c and n depending on physical inputs.
@@ -73,7 +80,7 @@ class DistributorSPH2D(Distributor):
         set of pairs of integers, resulting in a unique integer id for 
         each cell.
         """
-        
+
         grid_bounds = np.ceil(bounds/eps)
         grid_x_coords = range(-1,int(grid_bounds[0,0]) + 1)
         grid_y_coords = range(-1,int(grid_bounds[0,1]) + 1)
@@ -98,7 +105,7 @@ class DistributorSPH2D(Distributor):
 
         self.c.x_g = np.rint(self.c.x / self.eps).astype(int)
         self.c.x_id = self.map_to_id(self.c.x_g)
- 
+
         self.c.sort_indices = np.argsort(self.c.x_id)
 
         self.c.x = self.c.x[self.c.sort_indices,:]
@@ -107,7 +114,7 @@ class DistributorSPH2D(Distributor):
 
         self.c.x_id = self.c.x_id[self.c.sort_indices]
         self.c.x_g = self.c.x_g[self.c.sort_indices,:]
-        
+
         self.c.nonempty_cells_id = np.unique(self.c.x_id)
         self.c.cuts = np.searchsorted(self.c.x_id, self.c.nonempty_cells_id)
 
@@ -121,7 +128,7 @@ class DistributorSPH2D(Distributor):
         Helper function mapping integer pairs to a unique integer point.
         """
         a = x[:,0]
-        b = x[:,1] 
+        b = x[:,1]
         return ((a + b) * (a + b + 1) / 2 + b).astype(int)
 
     def map_particles(self):
@@ -139,7 +146,12 @@ class DistributorSPH2D(Distributor):
 
     def sort_neighbor_particles(self):
         """
+        Procedure which updates all the internal data of the neighbors given 
+        the of each cell that is dependent on input physical data.
 
+        Specifically, the collection of neighbors of a given cell are mapped
+        to its id. The same values computed for the cell in sort_particles 
+        are then computed for all neighboring points.
         """
         num_neighbors = 9
         _eps_e1 = np.arange(2)
@@ -155,7 +167,7 @@ class DistributorSPH2D(Distributor):
         _br = _eps_e1 + -1 * _eps_e2
 
         direction_vectors =  np.array([_ul,_um,_ur,_ml,_mm,_mr,_bl,_bm,_br])
-        
+
         # Copy the physical data of c 9 times.
         x_copies = np.repeat(self.c.x[:, :, np.newaxis], num_neighbors, axis=2)
         g_copies = np.repeat(self.c.x_g[:, :, np.newaxis], num_neighbors, axis=2)
@@ -187,24 +199,24 @@ class DistributorSPH2D(Distributor):
 
     def map_neighbors(self):
         """
-        
+        Method which populates neighbors of all nonempty cells.
         """
         num_neighbors = 9
 
-        self.neighbors_cuts = np.searchsorted(self.neighbors_id, self.nonempty_cell_neighbors_id)
+        self.n.cuts = np.searchsorted(self.n.x_id, self.n.nonempty_cells_id)
         # needs to add the endpoint
-        num_duplicated_pts = num_neighbors * self.num_pts
-        self.neighbors_cuts = np.append(self.neighbors_cuts,num_duplicated_pts)
-        
-    
-        for i in range(self.nonempty_cell_neighbors_id.shape[0]):
-            cell_id = self.nonempty_cell_neighbors_id[i]
-            x_cell_neighbors = self.x_neighbors[self.neighbors_cuts[i]:self.neighbors_cuts[i + 1],:]
-            v_cell_neighbors = self.v_neighbors[self.neighbors_cuts[i]:self.neighbors_cuts[i + 1],:]
-             
+        num_duplicated_pts = num_neighbors * self.c.x.shape[0]
+        self.n.cuts = np.append(self.n.cuts,num_duplicated_pts)
+
+        for i in range(self.n.nonempty_cells_id.shape[0]):
+            cell_id = self.n.nonempty_cells_id[i]
+            x_cell_neighbors = self.n.x[self.n.cuts[i]:self.n.cuts[i + 1],:]
+            v_cell_neighbors = self.n.v[self.n.cuts[i]:self.n.cuts[i + 1],:]
+            masses_neighbors = self.n.masses[self.n.cuts[i]:self.n.cuts[i + 1]]
+
             # Assign X_cell to the cell corresponding to hash
-            self.id_cells_dict[cell_id].set_neighbors(x_cell_neighbors,
-                                                v_cell_neighbors)
+            self.n.id_cells_dict[cell_id].populate_neighbors(x_cell_neighbors,
+                                                v_cell_neighbors, masses_neighbors)
 
     def distribute_computation(self,method,*args):
         """
@@ -213,4 +225,3 @@ class DistributorSPH2D(Distributor):
         """
         for i in self.c.nonempty_cells_id:
             method(self.c.id_cells_dict[i],*args)
-
