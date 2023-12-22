@@ -13,20 +13,21 @@ class Cell(ABC):
     supported kernel with bandwidth parameter eps.          
     """
 
-    def __init__(self):
+    def __init__(self,eps):
         self.dim = 2
+        self.eps = eps
 
         self.x_c = None
         self.v_c = None
         self.masses_c = None
-        self.num_pts = None
+        self.num_pts_c = None
 
         self.x_n = None
         self.v_n = None
         self.masses_n = None
-        self.num_n_pts = None
+        self.num_pts_n = None
 
-        self.eps = None
+
         self.distances = None
         self.densities_c = None
         self.densities_n = None
@@ -42,7 +43,7 @@ class Cell(ABC):
         self.v_c = v
         self.masses_c = masses
 
-        self.num_pts, _ = self.x_c.shape()
+        self.num_pts_c, _ = self.x_c.shape
 
     def populate_neighbors(self, x: npt.NDArray, v: npt.NDArray,masses: npt.NDArray) -> None:
         """
@@ -53,7 +54,7 @@ class Cell(ABC):
         self.v_n = v
         self.masses_n = masses
 
-        self.num_n_pts, _ = self.x_n.shape()
+        self.num_pts_n, _ = self.x_n.shape
 
     @abstractmethod
     def compute_distances(self):

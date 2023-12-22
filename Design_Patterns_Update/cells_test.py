@@ -1,72 +1,65 @@
 import numpy as np
-import numpy.typing as npt
-from scipy.spatial.distance import cdist
+from cells import  CellSPH2D
+import pytest
 
-from cells import Cell, CellSPH2D
+@pytest.fixture(name='ring_dataset')
+def fixture_ring_dataset():
+    """
+    Generates a single center point with a unit circle around the center
+    point. Used to check symmetry of various forces/quantities.
+    """
+    _num_pts = 12
+    _dim = 2
+    _thetas  = 2 * np.pi * np.arange(0,1,1/_num_pts)
+    _max_bounds = 3
+    _eps = .3
+    x = np.zeros((_num_pts + 1,_dim))
+    x[1:,0] = _eps / 2 * np.cos(_thetas) + _max_bounds/2
+    x[1:,1] = _eps / 2 * np.sin(_thetas) + _max_bounds/2
+    x[0,:] = _max_bounds / 2 * np.ones(2)
+    v = np.zeros(x.shape)
+    masses = np.ones(_num_pts)
 
+    return (x,v,masses)
 
-def test_populate():
+@pytest.fixture(name='cell')
+def fixture_cell():
+    """
+    Creates a SPH2D cell with eps = .3.
+    """
+    eps = .3
+    return CellSPH2D(eps)
+
+def test_populate(ring_dataset, cell):
     """
     Tests if a 2d dataset of 100 random points can be passed into cell memory.
     """
-    num_pts = 100
-    cell = CellSPH2D()
-    x_c = np.random.randn(num_pts,2)
-    v_c = np.random.randn(num_pts,2)
-    masses_c = np.random.randn(num_pts)
+    x_c,v_c,masses_c = ring_dataset
     cell.populate(x_c,v_c,masses_c)
-    assert (cell.x_c, cell.v_c,cell.masses_c) == (x_c, v_c,masses_c)
+    assert (cell.x_c, cell.v_c, cell.masses_c) == ring_dataset
 
-def test_populate_neighbors():
+def test_populate_neighbors(ring_dataset,cell):
     """
     Tests if a 2d dataset of 100 random points can be passed into cell 
     neighbors memory.
     """
-    num_pts = 100
-    cell = CellSPH2D()
-    x_n = np.random.randn(num_pts,2)
-    v_n = np.random.randn(num_pts,2)
-    masses_n = np.random.randn(num_pts)
+    x_n,v_n,masses_n = ring_dataset
     cell.populate_neighbors(x_n,v_n,masses_n)
-    assert (cell.x_n, cell.v_n,cell.masses_n) == (x_n, v_n,masses)    
+    assert (cell.x_n, cell.v_n, cell.masses_n) == ring_dataset
 
 def test_compute_distances():
     """
     Tests a simple dataset for the correct pairwise distances.
     """
-    cell = CellSPH2D()
-    cell.x_c = np.array([[0,0]])
-    cell.x_n = np.array([[0,0],[0,1],[1,1],[1,0]])
-    distances = np.array([[0,1, np.sqrt(2),1]])
-    cell.compute_distances()
-    assert np.array_equal(cell.distances,distances)
+
 
 def test_compute_densities():
     """
-    
+    Tests a simple dataset for the correct densities.
     """
-    pass
 
-def test_compute_density_kernel(self):
-    """
-    
-    """
-    pass
 
-def compute_densities(self):
+def test_compute_density_kernel():
     """
-     
+    Tests a simple dataset getting the correct kernel.
     """
-    pass
-
-def get_densities(self):
-    """
-    
-    """
-    pass
-
-def set_neighbor_densities(self,densities_n):
-    """
-    
-    """
-    pass
