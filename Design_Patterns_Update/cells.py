@@ -1,8 +1,15 @@
+"""
+Module for cells classes. Cells are in charge of making local computations
+in the simulation. Local computations are computations only requiring
+measurements between particles that are close together.
+
+"""
+from abc import ABC, abstractmethod
 import numpy as np
 import numpy.typing as npt
 from scipy.spatial.distance import cdist
 
-from abc import ABC, abstractmethod
+
 
 
 class Cell(ABC):
@@ -61,7 +68,7 @@ class Cell(ABC):
         """
         Abstract method to compute distances between particles.
         """
-        pass
+
 
 class CellSPH2D(Cell):
     """
@@ -76,21 +83,21 @@ class CellSPH2D(Cell):
         self.distances = cdist(self.x_c,self.x_n)
 
     def compute_density_kernel(self):
-        self.density_kenrnel_matrix = None
-
+        """"
+        Returns the density kernel
+        """
     def compute_densities(self):
         """
         Computes the density for each x_c in the cell from 
         """
-        self.densities_c = self.mass_constant * np.sum(self.density_kernel_matrix, axis=0)
+        self.densities_c = self.masses_c * np.sum(self.density_kernel_matrix, axis=0)
 
     def get_densities(self):
         """
         Getter method to return density values because they are needed by the 
         manager for symmetric density computation.
         """
-        return self.densities
-    
+
     def set_neighbor_densities(self,densities_n):
         """
         Setter method to return density values of neighboring cells because

@@ -82,8 +82,8 @@ class DistributorSPH2D(Distributor):
         """
 
         grid_bounds = np.ceil(bounds/eps)
-        grid_x_coords = range(-1,int(grid_bounds[0,0]) + 1)
-        grid_y_coords = range(-1,int(grid_bounds[0,1]) + 1)
+        grid_x_coords = range(-1,int(grid_bounds[0]) + 1)
+        grid_y_coords = range(-1,int(grid_bounds[1]) + 1)
 
         id_cells_dict = {int((i + j) *(i + j + 1) / 2 + j) : cell_type(eps)
                                                 for i in grid_x_coords
@@ -175,15 +175,15 @@ class DistributorSPH2D(Distributor):
 
         # collapse neighboring grid points to grid points offset by each neighboring direction.
         # The 3.1 is just to deal with rounding issues.
-        cells_copies = np.rint((g_copies + direction_vectors.T) / 3)
+        cells_copies = np.rint((g_copies + direction_vectors.T) / (3*self.eps))
 
         # Flatten both X values and neighbor copies in the same way
-        cells_copies = cells_copies.transpose(2,0,1).reshape(-1,self.dim)
+        self.n.x_g = cells_copies.transpose(2,0,1).reshape(-1,self.dim)
         self.n.x = x_copies.transpose(2,0,1).reshape(-1,self.dim)
         self.n.v = v_copies.transpose(2,0,1).reshape(-1,self.dim)
 
         # Apply hash to full_cells
-        self.n.x_id = self.map_to_id(cells_copies)
+        self.n.x_id = self.map_to_id(self.n.x_g)
 
         # argsort hash values
         self.n.sort_indices = np.argsort(self.n.x_id)
