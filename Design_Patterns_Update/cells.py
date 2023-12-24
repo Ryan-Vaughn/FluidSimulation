@@ -52,7 +52,7 @@ class Cell(ABC):
 
         self.num_pts_c, _ = self.x_c.shape
 
-    def populate_neighbors(self, x: npt.NDArray, v: npt.NDArray,masses: npt.NDArray) -> None:
+    def populate_neighbors(self, x: npt.NDArray, v: npt.NDArray, masses: npt.NDArray) -> None:
         """
         Method to load position and velocity of particles in neighboring cells
         into memory.

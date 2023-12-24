@@ -50,7 +50,7 @@ def test_sort_particles_unique(sph2d_distributor):
     targets = np.sort(targets)
     outputs = sph2d_distributor.c.nonempty_cells_id
 
-    assert np.all(outputs == targets)
+    assert np.array_equal(outputs,targets)
 
 def test_sort_neighbor_particles_unique(sph2d_distributor):
     """
@@ -69,4 +69,21 @@ def test_sort_neighbor_particles_unique(sph2d_distributor):
     targets = np.sort(targets)
 
     outputs = sph2d_distributor.n.nonempty_cells_id
-    assert np.all(outputs == targets)
+    assert np.array_equal(outputs,targets)
+
+def test_sort_particles_quantity(sph2d_distributor):
+    """
+    Checks that the correct cells are populated and the correct number of
+    particles are included in each cell that is populated.
+    """
+    ids_targets = np.array([4,7,8,11,12,13,17,18,24])
+    nums_targets = np.ones(9)
+
+    ids_outputs = np.sort(sph2d_distributor.c.nonempty_cells_id)
+    nums_outputs = np.array([sph2d_distributor.id_cells_dict[i].x_c.shape[0]
+                             for i in ids_targets])
+
+    correct_ids = np.array_equal(ids_outputs,ids_targets)
+    correct_nums = np.array_equal(nums_outputs,nums_targets)
+    print(nums_outputs)
+    assert correct_ids and correct_nums

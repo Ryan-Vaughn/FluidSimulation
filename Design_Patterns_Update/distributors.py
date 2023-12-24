@@ -23,7 +23,6 @@ class SPHInputData():
     v : NDArray[np.float32] = None
     masses : NDArray[np.float32] = None
 
-    id_cells_dict : dict[int,Cell] = None
     x_id : NDArray[np.int_] = None
     x_g : NDArray[np.int_] = None
     cuts : NDArray[np.int_] = None
@@ -57,18 +56,21 @@ class DistributorSPH2D(Distributor):
 
     def __init__(self,physical_data,meta_data):
         self.dim = 2
-        _, self.eps,self.bounds = meta_data
+        self.num_pts, self.eps,self.bounds = meta_data
 
+        self.id_cells_dict = self.initialize_lookup(*meta_data)
         # Data storage for cells
         self.c = SPHInputData()
-        self.c.id_cells_dict = self.initialize_lookup(*meta_data)
 
         # Data storage for neighboring cells.
         self.n = SPHInputData()
-        self.n.id_cells_dict = self.initialize_lookup(*meta_data)
 
         # Generate data for c and n depending on physical inputs.
         self.sort_particles(*physical_data).sort_neighbor_particles()
+
+        # Populate cells with position, velocity, and mass data
+        self.map_particles()
+        self.map_neighbors()
 
     def initialize_lookup(self,cell_type,eps,bounds):
         """
@@ -142,7 +144,7 @@ class DistributorSPH2D(Distributor):
             v_cell = self.c.v[self.c.cuts[i]:self.c.cuts[i + 1],:]
             masses_cell =  self.c.masses[self.c.cuts[i]:self.c.cuts[i + 1]]
 
-            self.c.id_cells_dict[id_tag].populate(x_cell,v_cell,masses_cell)
+            self.id_cells_dict[id_tag].populate(x_cell,v_cell,masses_cell)
 
     def sort_neighbor_particles(self):
         """
@@ -172,7 +174,7 @@ class DistributorSPH2D(Distributor):
         x_copies = np.repeat(self.c.x[:, :, np.newaxis], num_neighbors, axis=2)
         g_copies = np.repeat(self.c.x_g[:, :, np.newaxis], num_neighbors, axis=2)
         v_copies = np.repeat(self.c.v[:, :, np.newaxis], num_neighbors, axis=2)
-
+        masses_copies = np.repeat(self.c.masses[:,np.newaxis],num_neighbors,axis=1)
         # collapse neighboring grid points to grid points offset by each neighboring direction.
         # The 3.1 is just to deal with rounding issues.
         cells_copies = np.rint((g_copies + direction_vectors.T) / (3*self.eps))
@@ -182,6 +184,7 @@ class DistributorSPH2D(Distributor):
         self.n.x = x_copies.transpose(2,0,1).reshape(-1,self.dim)
         self.n.v = v_copies.transpose(2,0,1).reshape(-1,self.dim)
 
+        self.n.masses = masses_copies.transpose(1,0).reshape(-1)
         # Apply hash to full_cells
         self.n.x_id = self.map_to_id(self.n.x_g)
 
@@ -215,7 +218,7 @@ class DistributorSPH2D(Distributor):
             masses_neighbors = self.n.masses[self.n.cuts[i]:self.n.cuts[i + 1]]
 
             # Assign X_cell to the cell corresponding to hash
-            self.n.id_cells_dict[cell_id].populate_neighbors(x_cell_neighbors,
+            self.id_cells_dict[cell_id].populate_neighbors(x_cell_neighbors,
                                                 v_cell_neighbors, masses_neighbors)
 
     def distribute_computation(self,method,*args):
@@ -224,4 +227,4 @@ class DistributorSPH2D(Distributor):
         nonempty cells in the cell lookup.
         """
         for i in self.c.nonempty_cells_id:
-            method(self.c.id_cells_dict[i],*args)
+            method(self.id_cells_dict[i],*args)
