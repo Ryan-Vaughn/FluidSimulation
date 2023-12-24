@@ -9,8 +9,6 @@ from abc import ABC, abstractmethod
 import dataclasses
 import numpy as np
 from numpy.typing import NDArray
-from cells import Cell
-
 
 @dataclasses.dataclass
 class SPHInputData():
@@ -56,7 +54,7 @@ class DistributorSPH2D(Distributor):
 
     def __init__(self,physical_data,meta_data):
         self.dim = 2
-        self.num_pts, self.eps,self.bounds = meta_data
+        self.cell_type, self.eps,self.bounds = meta_data
 
         self.id_cells_dict = self.initialize_lookup(*meta_data)
         # Data storage for cells
@@ -177,7 +175,7 @@ class DistributorSPH2D(Distributor):
         masses_copies = np.repeat(self.c.masses[:,np.newaxis],num_neighbors,axis=1)
         # collapse neighboring grid points to grid points offset by each neighboring direction.
         # The 3.1 is just to deal with rounding issues.
-        cells_copies = np.rint((g_copies + direction_vectors.T) / (3*self.eps))
+        cells_copies = g_copies + direction_vectors.T
 
         # Flatten both X values and neighbor copies in the same way
         self.n.x_g = cells_copies.transpose(2,0,1).reshape(-1,self.dim)

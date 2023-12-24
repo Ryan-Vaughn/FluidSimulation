@@ -9,9 +9,6 @@ import numpy as np
 import numpy.typing as npt
 from scipy.spatial.distance import cdist
 
-
-
-
 class Cell(ABC):
     """
     Object which performs local computations on particles.
@@ -28,16 +25,15 @@ class Cell(ABC):
         self.v_c = None
         self.masses_c = None
         self.num_pts_c = None
-
+        self.densities_c = None
+        
         self.x_n = None
         self.v_n = None
         self.masses_n = None
         self.num_pts_n = None
-
+        self.densities_n = None
 
         self.distances = None
-        self.densities_c = None
-        self.densities_n = None
         self.pressure_gradients = None
         self.density_kernel_matrix = None
 

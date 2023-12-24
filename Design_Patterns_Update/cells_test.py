@@ -1,3 +1,6 @@
+"""
+Testing cells
+"""
 import numpy as np
 from cells import  CellSPH2D
 import pytest
