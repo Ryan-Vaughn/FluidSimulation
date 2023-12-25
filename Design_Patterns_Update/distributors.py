@@ -15,7 +15,50 @@ class SPHInputData():
     """
     Data class to book keep all the internal data of the Distributor.
 
-    One is used for the cell data, the other is for the neighboring cell data.
+    Upon initialization of DistributorSPH2D, two SPHInputData classes
+    are constructed. One (c) is used to track all internal data of cells
+    on the grid. The other (n) is used to track the data for all neighbors
+    of a given cell.
+
+    In the neighbors case, the total number of data points tracked is
+    num_neighbors * num_pts, where num_neighbors is the number of faces of
+    the cube + 1 (9). This allows to properly allocate each point to its
+    neighboring cells.
+
+    Parameters
+    ----------
+    x : NDArray[np.float32], shape = (num_pts, dim)
+        An array of all particles in the simulation.
+
+    x : NDArray[np.float32], shape = (num_pts, dim)
+        An array of the velocity of all particles in the simulation.
+
+    masses : NDArray[np.float32], shape = num_pts
+        An array of the masses of all particles in the simulation.
+
+    x_id : NDArray[np.int_], shape = num_pts,
+        An array whose entreees track the unique integer id of the cell
+        that currently contains the corresponding particle in x.
+
+    x_g : NDArray[np.int_], shape = (num_pts, dim)
+        An array whose entrees are the nearest integer multiple of the scaling
+        parameter eps. The entrees of x_g are used to generate x_id. The array
+        x_g is kept public because it is useful in the construction of the 
+        second SPHInputData class tracking neighboring points.
+
+    nonempty_cells_id : NDArray[np.int_] shape = num_nonempty_cells,
+        An array consisting of all nonempty cell ids.
+
+    sort_indices : NDArray[np.int_] shape = num_pts
+        The output of np.argsort(x_id). Sorting indices used to sort the
+        physical data of the simulation (x,v,masses for instance)
+    
+    cuts : NDArray[np.int_], shape = nonempty_cell_id.shape
+        An array used to allocate particles in x to and from the cells which 
+        they occupy. After sorting x_id and collecting the unique id values, 
+        the ith and i+1-th entry of cuts such that x[cuts[i]:cuts[i+1],:] is
+        the set of particles in the ith nonempty cell.
+
     """
     x : NDArray[np.float32] = None
     v : NDArray[np.float32] = None
@@ -43,7 +86,21 @@ class Distributor(ABC):
     @abstractmethod
     def distribute_computation(self,data_container,method,*args):
         """
-        method for applying a cell method to all cells in the distributor.
+        A method which applies a cell method to all nonempty cells,
+        then returns the outputs into global memory.
+
+        Parameters
+        ----------
+
+        data_container: dict
+            A data structure (usually a dictionary) which is used to index
+            all of the cells in the distributor.
+
+        method: function
+            A cell method to apply on all nonempty cells
+
+        *args: arguments
+            The arguments to pass into the cell methods.    
         """
 
 class DistributorSPH2D(Distributor):

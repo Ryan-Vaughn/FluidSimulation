@@ -30,9 +30,9 @@ bounds = np.array([max_x + np.abs(min_x) + 10, max_y + np.abs(min_y) + 10])
 
 v = np.zeros(x.shape)
 masses = np.ones(NUM_PTS)
-
+start_setup_time = time.time()
 dist = distributors.DistributorSPH2D((x,v,masses),(cells.CellSPH2D,EPS,bounds))
-
+end_setup_time = time.time()
 
 start_dist_time = time.time()
 dist.distribute_computation(cells.CellSPH2D.compute_distances,*[])
@@ -41,11 +41,10 @@ end_dist_time = time.time()
 start_brute_time = time.time()
 distances = cdist(x,x)
 end_brute_time = time.time()
+setup_time = end_setup_time - start_setup_time
 dist_time = end_dist_time - start_dist_time
 brute_time = end_brute_time - start_brute_time
-print("Distributed")
-print(dist_time)
-print("Brute Force")
-print(brute_time)
-speedup = brute_time / dist_time
-print(speedup)
+
+print("Setup:" + str(setup_time))
+print("Distributed:" + str(dist_time))
+print("Brute Force:" + str(brute_time))
