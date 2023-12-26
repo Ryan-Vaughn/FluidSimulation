@@ -26,7 +26,7 @@ class Cell(ABC):
         self.masses_c = None
         self.num_pts_c = None
         self.densities_c = None
-        
+
         self.x_n = None
         self.v_n = None
         self.masses_n = None
@@ -78,26 +78,21 @@ class CellSPH2D(Cell):
         """
         self.distances = cdist(self.x_c,self.x_n)
 
+
     def compute_density_kernel(self):
         """"
         Returns the density kernel
         """
+        _coeff = 315 / (64 * np.pi * self.eps ** 9)
+        _matrix = (self.eps ** 2 - self.distances ** 2) ** 3
+
+        self.density_kernel_matrix = _coeff * _matrix
+        self.density_kernel_matrix[self.distances > self.eps] = 0
+
     def compute_densities(self):
         """
         Computes the density for each x_c in the cell from 
         """
-        self.densities_c = self.masses_c * np.sum(self.density_kernel_matrix, axis=0)
+        self.densities_c = self.masses_c * np.sum(self.density_kernel_matrix, axis=1)
+        return self.densities_c
 
-    def get_densities(self):
-        """
-        Getter method to return density values because they are needed by the 
-        manager for symmetric density computation.
-        """
-
-    def set_neighbor_densities(self,densities_n):
-        """
-        Setter method to return density values of neighboring cells because
-        they are needed by the 
-        manager for symmetric density computation.
-        """
-        self.densities_n = densities_n

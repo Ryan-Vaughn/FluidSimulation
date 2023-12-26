@@ -10,7 +10,7 @@ import time
 from scipy.spatial.distance import cdist
 
 
-NUM_PTS = 40000
+NUM_PTS = 10000
 DIM = 2
 AMPLITUDE = 10
 EPS = .9
@@ -34,6 +34,11 @@ start_setup_time = time.time()
 dist = distributors.DistributorSPH2D((x,v,masses),(cells.CellSPH2D,EPS,bounds))
 end_setup_time = time.time()
 
+dist.distribute_computation_void(cells.CellSPH2D.compute_distances,*[])
+dist.distribute_computation_void(cells.CellSPH2D.compute_density_kernel,*[])
+densities = dist.distribute_computation_return(1,cells.CellSPH2D.compute_densities,*[])
+
+"""
 start_dist_time = time.time()
 dist.distribute_computation(cells.CellSPH2D.compute_distances,*[])
 end_dist_time = time.time()
@@ -48,3 +53,4 @@ brute_time = end_brute_time - start_brute_time
 print("Setup:" + str(setup_time))
 print("Distributed:" + str(dist_time))
 print("Brute Force:" + str(brute_time))
+"""
