@@ -10,7 +10,9 @@ other applications of Smoothed Particle Dynamics, including relativistic fluid d
 
 ## References
 https://matthias-research.github.io/pages/publications/sca03.pdf
+
 http://www.ligum.umontreal.ca/Clavet-2005-PVFS/pvfs.pdf
+
 https://web.archive.org/web/20140725014123/https://docs.nvidia.com/cuda/samples/5_Simulations/particles/doc/particles.pdf
 
 ## Features
