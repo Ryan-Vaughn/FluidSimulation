@@ -35,3 +35,5 @@ Optimizations:
 - Visualizations rendered in pyOpenGL
 - GPU acceleration by drag-and-drop replacement using CuPy
 - JIT Compiling using Numba
+- Applying SPH in other contexts, like modeling Bose Einstein Condensates and Relativistic fluid dynamics.
+- Applying the underlying data structure to other PDE discretization methods such as Helmholtz decomposition.
