@@ -477,13 +477,12 @@ class Cell:
         
         for i in range(self.dim):
             self.kernel_gradients[:,:,i] = kernel_derivative * self.distance_gradients[:,:,i]
-        pass
+
 
     def compute_pressures(self):
        # Using the Simulation variables rest_density and pressure_constant, 
        # compute the pressure from the density
        self.pressures = self.pressure_constant * (self.densities - self.rest_density)
-       pass
 
     def compute_symmetric_pressures(self):
         # Query all neighbors and take an average of the pairwise pressures.
@@ -492,7 +491,6 @@ class Cell:
 
         # Compute the symmetric pressure so that the SPH pressure computation is symmetric.
         symmetric_pressures = np.add.outer(self.pressures,self.pressures) / (2 * self.densities)
-        pass
 
     def compute_pressure_forces(self):
         # combine pressure kernel gradient, distance gradient, and symmetric pressure
@@ -506,24 +504,20 @@ class Cell:
 
         #sum over one axis to obtain estimate for the pressure forces at each point.
         self.pressure_forces = self.mass_constant *  np.sum(self.pressure_forces,axis=1)
-        pass
 
     def compute_viscosity_kernel(self):
         # Compute the viscosity kernel matrix in analogous fashion to density kernel.                    
         self.viscosity_kernel_matrix = 15/(2 * np.pi * self.eps ** 3) * ((- self.distances ** 3)/(2 * self.eps ** 3) +  (self.distances ** 2) / self.eps ** 2 + self.eps / (2 * self.distances) - 1)
         self.viscosity_kernel_matrix[self.distances > self.eps] = 0
-        pass
 
     def compute_viscosity_kernel_laplacian(self):
         # Compute the viscosity kernel matrix in analogous fashion to density kernel.
         self.viscosity_kernel_laplacian = 45 / (np.pi * self.eps ** 6) * (self.eps - self.distances)
-        pass
     
     def compute_symmetric_velocities(self):
         # Query all neighbors and take an average of the pairwise velocity vectors.
         # NOTE: We need to have some indication that all pressures in the
         # simulation have been computed already (or at least for all neighbors)
-        pass
 
     def compute_viscosity_force(self):
         # Compute the velocity force

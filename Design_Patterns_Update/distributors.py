@@ -53,11 +53,13 @@ class SPHInputData():
         The output of np.argsort(x_id). Sorting indices used to sort the
         physical data of the simulation (x,v,masses for instance)
     
-    cuts : NDArray[np.int_], shape = nonempty_cell_id.shape
-        An array used to allocate particles in x to and from the cells which 
-        they occupy. After sorting x_id and collecting the unique id values, 
-        the ith and i+1-th entry of cuts such that x[cuts[i]:cuts[i+1],:] is
-        the set of particles in the ith nonempty cell.
+    slices : list[np.s_], shape = nonempty_cell_id.shape
+        An array of numpy slice objects, used to partition all arrays of
+        interest into smaller arrays corresponding to the particles in 
+        a given nonempty cell. I.e. self.c.x[slices[0]] returns all 
+        positions of the particles in the sim while self.n.x[slices[1]]
+        returns the positions of all particles neighboring the second
+        nonempty cell in the simulation.  
 
     """
     x : NDArray[np.float32] = None
@@ -66,38 +68,9 @@ class SPHInputData():
 
     x_id : NDArray[np.int_] = None
     x_g : NDArray[np.int_] = None
-    cuts : NDArray[np.int_] = None
+    slices : list[np.s_] = None
     nonempty_cells_id : NDArray[np.int_] = None
     sort_indices : NDArray[np.int_] = None
-
-@dataclasses.dataclass
-class SPHOutputData():
-    """
-    Data class to book keep output data from cells.
-
-    This data is then passed to the manager/solver to update the simulation.
-    Pressures needs to be tracked in global memory so that 
-
-    Parameters
-    ----------
-    x : NDArray[np.float32], shape = (num_pts, dim)
-        An array of all particles in the simulation.
-
-    v : NDArray[np.float32], shape = (num_pts, dim)
-        An array of the velocity of all particles in the simulation.
-
-    masses : NDArray[np.float32], shape = num_pts
-        An array of the masses of all particles in the simulation.
-
-    pressures : NDArray[np.float32], shape = num_pts
-        An array of the pressures of all particles in the simulation.
-
-    """
-    x : NDArray[np.float32] = None
-    v : NDArray[np.float32] = None
-    masses : NDArray[np.float32] = None
-    pressures : NDArray[np.float32] = None
-
 
 class Distributor(ABC):
     """
@@ -113,24 +86,10 @@ class Distributor(ABC):
         pass
 
     @abstractmethod
-    def distribute_computation_void(self,data_container,method,*args):
-        """
-        A method which applies a cell method to all nonempty cells,
-        then returns the outputs into global memory.
+    def distribute_procedure(self,method,args):
+        pass
+    
 
-        Parameters
-        ----------
-
-        data_container: dict
-            A data structure (usually a dictionary) which is used to index
-            all of the cells in the distributor.
-
-        method: function
-            A cell method to apply on all nonempty cells
-
-        *args: arguments
-            The arguments to pass into the cell methods.    
-        """
 
 class DistributorSPH2D(Distributor):
     """
@@ -146,18 +105,22 @@ class DistributorSPH2D(Distributor):
         self.cell_type, self.eps,self.bounds = meta_data
 
         self.id_cells_dict = self.initialize_lookup(*meta_data)
-        # Data storage for cells
+
+        # Data class for storing global data for cells
         self.c = SPHInputData()
 
-        # Data storage for neighboring cells.
+        # Data class for storing global data for neighbors.
         self.n = SPHInputData()
 
-        # Generate data for c and n depending on physical inputs.
-        self.populate_particles(*physical_data).sort_particles(self.c)
-        self.populate_neighbor_particles().sort_particles(self.n)
-        # Populate cells with position, velocity, and mass data
-        self.map_particles()
-        self.map_neighbors()
+        # Load all the global data into the distributor and generate cell
+        # assignment ids.
+
+        self.load_particles(*physical_data).sort_particles(self.c)
+        self.load_neighbors().sort_particles(self.n)
+
+        # Assign local data to appropriate cells.
+        self.populate_particles()
+        self.populate_neighbors()
 
     def initialize_lookup(self,cell_type,eps,bounds):
         """
@@ -179,7 +142,7 @@ class DistributorSPH2D(Distributor):
                                                 for j in grid_y_coords}
         return id_cells_dict
 
-    def populate_particles(self,x,v,masses):
+    def load_particles(self,x,v,masses):
         """
         Procedure which updates all the internal data of the cell given the
         input physical data.
@@ -188,7 +151,7 @@ class DistributorSPH2D(Distributor):
         integer grid point.
         """
         self.num_pts,self.dim = x.shape
-        self.num_neighbors = 9 #T ODO: make this into a function of dim later
+        self.num_neighbors = 9 #TODO: make this into a function of dim later
 
         self.c.x = x
         self.c.v = v
@@ -213,11 +176,12 @@ class DistributorSPH2D(Distributor):
         data_object.x_g = data_object.x_g[data_object.sort_indices,:]
 
         data_object.nonempty_cells_id = np.unique(data_object.x_id)
-        data_object.cuts = np.searchsorted(data_object.x_id, data_object.nonempty_cells_id)
+        cuts = np.searchsorted(data_object.x_id, data_object.nonempty_cells_id)
 
-        # cuts needs one more entry.
-        data_object.cuts = np.append(data_object.cuts,data_object.x.shape[0])
-
+        # cuts needs one more entry which is num_pts in either c or n.
+        cuts = np.append(cuts,data_object.x.shape[0])
+        
+        data_object.slices = [np.s_[cuts[i]:cuts[i+1],...] for i in range(len(cuts)-1)]
         return self
 
     def map_to_id(self,x):
@@ -228,20 +192,20 @@ class DistributorSPH2D(Distributor):
         b = x[:,1]
         return ((a + b) * (a + b + 1) / 2 + b).astype(int)
 
-    def map_particles(self):
+    def populate_particles(self):
         """
-        Method which populates all nonempty cells.
+        Procedure that populates all nonempty cells.
         """
         for i in range(self.c.nonempty_cells_id.shape[0]):
             id_tag = self.c.nonempty_cells_id[i]
 
-            x_cell = self.c.x[self.c.cuts[i]:self.c.cuts[i + 1],:]
-            v_cell = self.c.v[self.c.cuts[i]:self.c.cuts[i + 1],:]
-            masses_cell =  self.c.masses[self.c.cuts[i]:self.c.cuts[i + 1]]
+            x_cell = self.c.x[self.c.slices[i]]
+            v_cell = self.c.v[self.c.slices[i]]
+            masses_cell =  self.c.masses[self.c.slices[i]]
 
             self.id_cells_dict[id_tag].populate(x_cell,v_cell,masses_cell)
 
-    def populate_neighbor_particles(self):
+    def load_neighbors(self):
         """
         Procedure which updates all the internal data of the neighbors given 
         the of each cell that is dependent on input physical data.
@@ -262,47 +226,25 @@ class DistributorSPH2D(Distributor):
         _bm = -1 * _eps_e2
         _br = _eps_e1 + -1 * _eps_e2
 
-        direction_vectors =  np.array([_ul,_um,_ur,_ml,_mm,_mr,_bl,_bm,_br])
+        shift_vectors =  np.array([_ul,_um,_ur,_ml,_mm,_mr,_bl,_bm,_br])
 
-        # Copy the physical data of c 9 times.
-        self.n.x = self.duplicate(self.c.x)
-        self.n.v = self.duplicate(self.c.v)
-        self.n.masses = self.duplicate(self.c.v)
+        # Duplicate the array num_neighbors times then arrange to a 2d array.
+        self.n.x = self.arrange(self.duplicate(self.c.x))
+        self.n.v = self.arrange(self.duplicate(self.c.v))
+        self.n.masses = self.arrange(self.duplicate(self.c.masses))
 
-        # Copy -> shift by direction vectors -> arrange in consistent manner.
-        g_copies = np.repeat(self.c.x_g[:, :, np.newaxis],
-                            self.num_neighbors,
-                            axis=2)
-        cells_copies = g_copies + direction_vectors.T
-        self.n.x_g = cells_copies.transpose(2,0,1).reshape(-1,self.dim)
+        # Perform the same process but shift each copy of the points by the
+        # corresponding direction vector.
+        g_copies = self.duplicate(self.c.x_g)
+        shifted_g_copies = self.shift(g_copies,shift_vectors)
+        self.n.x_g = self.arrange(shifted_g_copies)
 
         # Apply hash to full_cells
         self.n.x_id = self.map_to_id(self.n.x_g)
 
         return self
 
-    def sort_neighbor_particles(self):
-        """
-        Procedure which updates all the internal data of the neighbors given 
-        the of each cell that is dependent on input physical data.
-
-        Specifically, the collection of neighbors of a given cell are mapped
-        to its id. The same values computed for the cell in sort_particles 
-        are then computed for all neighboring points.
-        """
-        # argsort hash values
-        self.n.sort_indices = np.argsort(self.n.x_id)
-
-        # sort X and V copies with the arg
-        self.n.x = self.n.x[self.n.sort_indices,:]
-        self.n.v = self.n.v[self.n.sort_indices,:]
-
-        # sort hash value
-        self.n.x_id = self.n.x_id[self.n.sort_indices]
-        self.n.nonempty_cells_id = np.unique(self.n.x_id)
-        return self
-
-    def map_neighbors(self):
+    def populate_neighbors(self):
         """
         Method which populates neighbors of all nonempty cells.
         """
@@ -323,22 +265,25 @@ class DistributorSPH2D(Distributor):
             self.id_cells_dict[cell_id].populate_neighbors(x_cell_neighbors,
                                                 v_cell_neighbors, masses_neighbors)
 
-    def distribute_computation_void(self,method,*args):
+    def distribute_procedure(self,method,args):
         """
-        Method that applies an input cell method using input *args to all
-        nonempty cells in the cell lookup. Used for procedures that do not
-        return data.
+        Method that applies an input cell procedure to all nonempty cells 
+        in the array. This is for methods that we only want to modify the
+        internal state of cells (i.e. don't want to aggregate the
+        computation into global memory.)
         """
 
         for i in self.c.nonempty_cells_id:
             method(self.id_cells_dict[i],*args)
 
-    def distribute_computation_return(self,output_dim,method,*args):
+    def distribute_function(self,method,output_dim,args):
         """
-        Method that applies an input cell method using input *args to all
-        nonempty cells in the cell lookup.
+        Method that applies an input cell function using input args to all
+        nonempty cells in the cell lookup and collects the outputs into
+        global memory which is then returned.
         """
         num_nonempty_cells = self.c.nonempty_cells_id.shape[0]
+
         if output_dim == 2:
             output = np.zeros((self.num_pts,output_dim))
             for i in range(num_nonempty_cells):
@@ -349,7 +294,6 @@ class DistributorSPH2D(Distributor):
             output = np.zeros(self.num_pts)
             for i in range(num_nonempty_cells):
                 tag = self.c.nonempty_cells_id[i]
-                print((i,tag))
                 output[self.c.cuts[i]:self.c.cuts[i+1]] = method(self.id_cells_dict[tag],*args)
             output = output.reshape(self.num_pts)
 
@@ -371,9 +315,104 @@ class DistributorSPH2D(Distributor):
 
         if d_dim == 2:
             d_copies = np.repeat(d[:, :, np.newaxis], self.num_neighbors, axis=2)
-            d_copies = d_copies.transpose(2,0,1).reshape(-1,self.dim)
         if d_dim == 1:
-            d_copies = np.repeat(d_copies[:,np.newaxis],self.num_neighbors,axis=1)
-            self.n.masses = d_copies.transpose(1,0).reshape(-1)
+            d_copies = np.repeat(d[:,np.newaxis],self.num_neighbors,axis=1)
 
         return d_copies
+
+    def arrange(self,d_copies):
+        """
+        Helper function that arranges a duplicated array in an organized manner
+        that allows for neighbor data to be tracked and sorted.
+        """
+        if len(d_copies.shape) == 3:
+            _, d_dim, _ = d_copies.shape
+        elif len(d_copies.shape) == 2:
+            d_dim = 1
+        else:
+            print("Error: Array has too many dimensions. Check the duplicate method.")
+
+        if d_dim == 2:
+            d_arranged_copies = d_copies.transpose(2,0,1).reshape(-1,self.dim)
+        if d_dim == 1:
+            d_arranged_copies = d_copies.transpose(1,0).reshape(-1)
+
+        return d_arranged_copies
+
+    def shift(self, d_copies, shift_vectors):
+        """
+        A helper function that maps each copy of the points in the direction
+        of the neighbor.
+        """
+        shifted_d_copies = d_copies + shift_vectors.T
+        return shifted_d_copies
+
+    def distribute_method(self,cell_method,*args, domain= 'c',returns = False, codomain = 'c',
+                        **kwargs):
+        """
+        A decorator that distributes a given cell method across all cells in
+        the distributor.
+
+        Parameters
+        ----------
+
+        cell_method : callable
+            A function that acts on a single cell.
+
+        *args : tuple
+            The non-keyword arguments that will be passed to each cell in the
+            distributor
+
+        domain : str
+            Controls which indexing cut points to use. The input 'c' dictates
+            that the method iterates over all points in the simulation. The
+            input 'n' dictates that the method iterates over all neighbor
+            point in the simulation (which will be more than the number
+            of total points due to double counting.)
+
+        returns : bool
+            Controls whether or not the cell method needs to aggregate the
+            output values of the cell methods into a single global array.
+
+        codomain : str
+            Similar to domain, except this dictates the indexing for the 
+            output global array. Uses the same standard as domain, but
+            only relevant if returns == True.
+        """
+
+        if domain == 'c':
+            domain_data_object = self.c
+        if domain == 'n':
+            domain_data_object = self.n
+
+        if codomain == 'c':
+            codomain_data_object = self.c
+            _num_pts = self.c.x.shape[0]
+        if domain == 'n':
+            codomain_data_object = self.n
+            _num_pts = self.n.x.shape[0]
+
+        if returns is False:
+            generators = map(lambda A:
+                            (A[i] for i in
+                            domain_data_object.slices), *args)
+            iterator = zip(*generators)
+
+            for id,inputs in zip(self.c.nonempty_cells_id,iterator):
+                cell_method(self.id_cells_dict[id],*inputs,**kwargs)
+
+        if returns is True:
+            output_dim = cell_method.output_dim
+            output_shape = (_num_pts,) + tuple(output_dim)
+            output = np.zeros(output_shape)
+
+            generators = map(lambda A:
+                            (A[i] for i in
+                            domain_data_object.slices), *args)
+            iterator = zip(*generators)
+
+            output_iterator = (i for i in codomain_data_object.slices)
+
+            for id,output_slices,inputs in zip(self.c.nonempty_cells_id,output_iterator,iterator):
+                output[output_slices] = cell_method(self.id_cells_dict[id],*inputs,**kwargs)
+            return output

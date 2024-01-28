@@ -2,12 +2,11 @@
 Hacked together benchmarking to test the effectiveness of the data structure
 for pairwise distance computations.
 """
+import time
 import numpy as np
-import pytest
 import cells
 import distributors
-import time
-from scipy.spatial.distance import cdist
+from functools import partial
 
 
 NUM_PTS = 10000
@@ -34,23 +33,13 @@ start_setup_time = time.time()
 dist = distributors.DistributorSPH2D((x,v,masses),(cells.CellSPH2D,EPS,bounds))
 end_setup_time = time.time()
 
-dist.distribute_computation_void(cells.CellSPH2D.compute_distances,*[])
-dist.distribute_computation_void(cells.CellSPH2D.compute_density_kernel,*[])
-densities = dist.distribute_computation_return(1,cells.CellSPH2D.compute_densities,*[])
+dist.distribute_procedure(cells.CellSPH2D.compute_distances,())
+dist.distribute_procedure(cells.CellSPH2D.compute_density_kernel,())
+dist.distribute_procedure(cells.CellSPH2D.compute_densities,())
 
-"""
-start_dist_time = time.time()
-dist.distribute_computation(cells.CellSPH2D.compute_distances,*[])
-end_dist_time = time.time()
+A = np.ones((NUM_PTS,2))
+B = 2* np.ones((NUM_PTS,2))
+C = 3* np.ones(NUM_PTS)
 
-start_brute_time = time.time()
-distances = cdist(x,x)
-end_brute_time = time.time()
-setup_time = end_setup_time - start_setup_time
-dist_time = end_dist_time - start_dist_time
-brute_time = end_brute_time - start_brute_time
-
-print("Setup:" + str(setup_time))
-print("Distributed:" + str(dist_time))
-print("Brute Force:" + str(brute_time))
-"""
+physical_data = (A,B,C)
+dist.distribute_method(cells.CellSPH2D.populate,physical_data)
