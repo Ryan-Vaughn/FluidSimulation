@@ -6,7 +6,6 @@ import time
 import numpy as np
 import cells
 import distributors
-from functools import partial
 
 
 NUM_PTS = 10000
@@ -30,16 +29,16 @@ bounds = np.array([max_x + np.abs(min_x) + 10, max_y + np.abs(min_y) + 10])
 v = np.zeros(x.shape)
 masses = np.ones(NUM_PTS)
 start_setup_time = time.time()
-dist = distributors.DistributorSPH2D((x,v,masses),(cells.CellSPH2D,EPS,bounds))
+dist = distributors.SPHDistributor((x,v,masses),(cells.FluidSimCell,EPS,bounds))
 end_setup_time = time.time()
-
-dist.distribute_procedure(cells.CellSPH2D.compute_distances,())
-dist.distribute_procedure(cells.CellSPH2D.compute_density_kernel,())
-dist.distribute_procedure(cells.CellSPH2D.compute_densities,())
 
 A = np.ones((NUM_PTS,2))
 B = 2* np.ones((NUM_PTS,2))
 C = 3* np.ones(NUM_PTS)
 
 physical_data = (A,B,C)
-dist.distribute_method(cells.CellSPH2D.populate,physical_data)
+dist.distribute_method(dist.cell_type.populate,*physical_data)
+
+dist.distribute_method(dist.cell_type.compute_distances)
+dist.distribute_method(dist.cell_type.compute_density_kernel)
+dist.distribute_method(dist.cell_type.compute_densities)

@@ -5,8 +5,9 @@ measurements between particles that are close together.
 
 """
 from abc import ABC, abstractmethod
+import dataclasses
 import numpy as np
-import numpy.typing as npt
+from numpy.typing import NDArray
 from scipy.spatial.distance import cdist
 
 class Cell(ABC):
@@ -15,55 +16,13 @@ class Cell(ABC):
 
     The locality of the computations is dictated by some compactly
     supported kernel with bandwidth parameter eps.          
-    """ 
-
+    """
     def __init__(self,eps):
-        self.dim = 2
         self.eps = eps
-
-        self.x_c = None
-        self.v_c = None
-        self.masses_c = None
-        self.num_pts_c = None
-        self.pressures_c = None
-
-        self.x_n = None
-        self.v_n = None
-        self.masses_n = None
-        self.num_pts_n = None
-        self.pressures_n = None
-
         self.distances = None
-        
-        self.pressure_constant = None
-        self.rest_density = None
+        self.c = None
+        self.n = None
 
-        self.pressure_gradients = None
-        self.density_kernel_matrix = None
-
-    def populate(self, x: npt.NDArray, v: npt.NDArray, masses: npt.NDArray) -> None:
-        """
-        Method to load position and velocity of particles in the cell into
-        memory.
-        """
-
-        self.x_c = x
-        self.v_c = v
-        self.masses_c = masses
-
-        self.num_pts_c, _ = self.x_c.shape
-
-    def populate_neighbors(self, x: npt.NDArray, v: npt.NDArray, masses: npt.NDArray) -> None:
-        """
-        Method to load position and velocity of particles in neighboring cells
-        into memory.
-        """
-
-        self.x_n = x
-        self.v_n = v
-        self.masses_n = masses
-
-        self.num_pts_n, _ = self.x_n.shape
 
     @abstractmethod
     def compute_distances(self):
@@ -72,23 +31,80 @@ class Cell(ABC):
         """
 
 
-class CellSPH2D(Cell):
+@dataclasses.dataclass
+class FluidSimCellInputData():
+    """
+    Data class to book keep all the internal data of the Cell.
+
+
+    Parameters
+    ----------
+    x : NDArray[np.float32], shape = (num_pts, dim)
+        An array of all particles in the cell.
+
+    v : NDArray[np.float32], shape = (num_pts, dim)
+        An array of the velocity of all particles in the cell.
+
+    masses : NDArray[np.float32], shape = num_pts
+        An array of the masses of all particles in the cell.
+
+    """
+    x : NDArray[np.float32] = None
+    v : NDArray[np.float32] = None
+    masses : NDArray[np.float32] = None
+    num_pts: int = None
+    pressures: NDArray[np.float32] = None
+
+class FluidSimCell(Cell):
     """
     Cell for computing forces in 2d Smoothed Particle Hydrodynamics.          
     """
+    def __init__(self,eps):
+        super().__init__(eps)
+
+        self.dim = None
+
+        self.c = FluidSimCellInputData
+        self.n = FluidSimCellInputData
+
+        self.density_kernel_matrix = None
+        self.distance_gradients = None
+        self.pressure_kernel_gradients = None
+
+    def populate(self, x, v, masses):
+        """
+        Helper method to load physical data of particles into cell.
+        """
+
+        self.c.x = x
+        self.c.v = v
+        self.c.masses = masses
+
+        self.c.num_pts, self.dim = self.c.x.shape
+
+    def populate_n(self, x, v, masses):
+        """
+        Helper method to load physical data of neighboring particles into cell.
+        """
+
+        self.n.x = x
+        self.n.v = v
+        self.n.masses = masses
+
+        self.n.num_pts, _ = self.n.x.shape
 
     def compute_distances(self):
         """
-        Computes the pairwise Euclidean distances between particles in x_c
-         and x_n.
+        Computes the pairwise Euclidean distances between particles in the
+        cell and all neighboring particles (including those in the cell).
         """
-
-        self.distances = cdist(self.x_c,self.x_n)
+        self.distances = cdist(self.c.x,self.n.x)
 
 
     def compute_density_kernel(self):
         """"
-        Returns the density kernel
+        Returns the density kernel. This density kernel is from ___ and is
+        adapted to __ dimensions.
         """
         _coeff = 315 / (64 * np.pi * self.eps ** 9)
         _matrix = (self.eps ** 2 - self.distances ** 2) ** 3
@@ -98,72 +114,86 @@ class CellSPH2D(Cell):
 
     def compute_densities(self):
         """
-        Computes the density for each x_c in the cell from 
+        Computes the density at each particle's location in the cell.
         """
+        self.c.densities = self.c.masses * np.sum(self.density_kernel_matrix, axis=1)
 
-        self.densities_c = self.masses_c * np.sum(self.density_kernel_matrix, axis=1)
-
-    ## NEED TO BE MERGED:
-    """
-    def compute_distance_gradients(self):
-        # compute the gradients of the distance function between points in cell and 
-        # distance
-        self.distance_gradients = np.zeros((self.num_pts,self.num_pts,self.dim))
-        # We make an artificial change here to avoid division by zero on the diagonal.
-        modified_distances =  self.distances + np.eye(self.num_pts)
+    def get_densities(self):
+        """
+        Method to return densities back to the distributor. The pressure will
+        then be computed using global memory because it relies only on global
+        variables and can be done more efficiently that way. 
         
-        # Another crappy hack to keep things from breaking
-        modified_distances[modified_distances <=0] = 3 * np.finfo(float).eps
+        The pressure must be returned to global memory regardless because the
+        pressure of neighboring particles is computed inside the neighboring
+        cell and can only be updated after all of the pressures in the sim
+        have been computed.
+        """
+        return self.c.densities
+
+    def set_pressures(self,pressures):
+        """
+        Helper function used to set the pressures in the cell. Purely for
+        convenience and clarity.
+        """
+        self.c.pressures = pressures
+
+    def set_pressures_n(self,pressures):
+        """
+        Helper function used to set the pressures in the neighboring cells.
+        Purely for convenience and clarity.
+        """
+        self.n.pressures = pressures
+
+    def compute_distance_gradients(self):
+        """
+        Compute the gradient vectors of the kernel sections for each pair of points.
+        """
+        self.distance_gradients = np.zeros((self.c.num_pts,self.n.num_pts,self.dim))
+
+        # Artificial hack to avoid division by zero.
+        mod_dists =  self.distances + np.eye(self.c.num_pts,self.n.num_pts)
+
+        # Another hack to avoid breaking stuff due to numerical epsilon.
+        mod_dists[mod_dists <=0] = 3 * np.finfo(float).eps
 
         for i in range(self.dim):
-            self.distance_gradients[:,:,i] =  np.subtract.outer(self.X_c[:,i],self.X_n[:,i]) / modified_distances
+            l1_dists = np.subtract.outer(self.c.x[:,i],self.n.x[:,i])
+            self.distance_gradients[:,:,i] =  l1_dists / mod_dists
 
     def compute_pressure_kernel_gradients(self):
-        # Compute the pressure kernel gradient (only the shape function.)
-        # First compute the gradient of the shape function using distance = distance ** 2.
-        kernel_derivative = 45 * (self.eps - self.distances) ** 2
-        # Assume that derivative is zero outside the support of the shape function.
-        kernel_derivative[self.distances>self.eps] = 0
-        
-        # Compute the total derivative from the input distance gradients and the computed
-        # kernel gradient.
-        self.kernel_gradients = np.zeros((self.num_pts_c,self.num_pts_n,self.dim))
-        
+        """
+        Compute the gradient of the pressure kernel. This is done by
+        first computing the derivative of the shape function, then
+        using chain rule by composing with distance gradients. 
+        """
+        kernel_deriv = 45 * (self.eps - self.distances) ** 2
+
+        kernel_deriv[self.distances>self.eps] = 0 # zero outside eps
+
+        self.pressure_kernel_gradients = np.zeros((self.c.num_pts,
+                                                   self.n.num_pts,
+                                                   self.dim))
+
         for i in range(self.dim):
-            self.kernel_gradients[:,:,i] = kernel_derivative * self.distance_gradients[:,:,i]
+            pderivs = kernel_deriv * self.distance_gradients[:,:,i]
+            self.pressure_kernel_gradients[:,:,i] = pderivs
+# TODO: MERGE THESE IN.
 
-
-    def compute_pressures(self):
-       # Using the Simulation variables rest_density and pressure_constant, 
-       # compute the pressure from the density
-       self.pressures = self.pressure_constant * (self.densities - self.rest_density)
-    
-    def get_pressures(self):
-        return self.pressures
-
-          
-    # TODO: MERGE IN
-    
-    def compute_symmetric_pressures(self):
-        # Query all neighbors and take an average of the pairwise pressures.
-        # NOTE: We need to have some indication that all pressures in the
-        # simulation have been computed already (or at least for all neighbors)
-
-        # Compute the symmetric pressure so that the SPH pressure computation is symmetric.
-        self.symmetric_pressures = np.add.outer(self.pressures_c,self.pressures_n) / (2 * self.densities)
-
+"""
     def compute_pressure_forces(self):
         # combine pressure kernel gradient, distance gradient, and symmetric pressure
         # to obtain the pressure force.
 
         # Weight the gradients by the symmetric pressures
-        self.pressure_forces = np.zeros((self.num_pts,self.num_pts, self.dim))
-        
+        self.pressure_forces = np.zeros((self.c.num_pts,self.n.num_pts, self.dim))
+
         for i in range(self.dim):
             self.pressure_forces[:,:,i] = self.symmetric_pressures.T * self.kernel_gradients[:,:,i]
 
         #sum over one axis to obtain estimate for the pressure forces at each point.
         self.pressure_forces = self.mass_constant *  np.sum(self.pressure_forces,axis=1)
+
 
     def compute_viscosity_kernel(self):
         # Compute the viscosity kernel matrix in analogous fashion to density kernel.                    
@@ -189,5 +219,5 @@ class CellSPH2D(Cell):
             symmetric_velocities[:,:,i] = np.subtract.outer(self.V[:,i],self.V[:,i]) / self.densities
             self.viscosity_forces[:,:,i] = symmetric_velocities[:,:,i] * self.viscosity_kernel_laplacian
         
-        self.viscosity_forces = self.mass_constant * self.viscosity_constant * np.sum(self.viscosity_forces,axis=1) 
-    """
+        self.viscosity_forces = self.mass_constant * self.viscosity_constant * np.sum(self.viscosity_forces,axis=1)
+"""

@@ -11,7 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 @dataclasses.dataclass
-class SPHInputData():
+class SPHDistInputData():
     """
     Data class to book keep all the internal data of the Distributor.
 
@@ -85,19 +85,15 @@ class Distributor(ABC):
     def __init__(self):
         pass
 
-    @abstractmethod
-    def distribute_procedure(self,method,args):
-        pass
-    
 
-
-class DistributorSPH2D(Distributor):
+class SPHDistributor(Distributor):
     """
     Distributor for distributing computations into Cells.
 
     """
 
     def __init__(self,physical_data,meta_data):
+
         self.dim = None
         self.num_pts = None
         self.num_neighbors = None
@@ -107,10 +103,10 @@ class DistributorSPH2D(Distributor):
         self.id_cells_dict = self.initialize_lookup(*meta_data)
 
         # Data class for storing global data for cells
-        self.c = SPHInputData()
+        self.c = SPHDistInputData()
 
         # Data class for storing global data for neighbors.
-        self.n = SPHInputData()
+        self.n = SPHDistInputData()
 
         # Load all the global data into the distributor and generate cell
         # assignment ids.
@@ -119,8 +115,8 @@ class DistributorSPH2D(Distributor):
         self.load_neighbors().sort_particles(self.n)
 
         # Assign local data to appropriate cells.
-        self.populate_particles()
-        self.populate_neighbors()
+        self.populate_particles(self.c)
+        self.populate_particles(self.n)
 
     def initialize_lookup(self,cell_type,eps,bounds):
         """
@@ -150,8 +146,14 @@ class DistributorSPH2D(Distributor):
         Specifically, each particle is assigned an id corresponding to a unique
         integer grid point.
         """
-        self.num_pts,self.dim = x.shape
-        self.num_neighbors = 9 #TODO: make this into a function of dim later
+
+        if len(x.shape) == 1: # handling 1d array case
+            self.dim = 1
+            self.num_pts = x.shape[0]
+        else:
+            self.num_pts,self.dim = x.shape
+
+        self.num_neighbors = 3 ** self.dim
 
         self.c.x = x
         self.c.v = v
@@ -180,7 +182,7 @@ class DistributorSPH2D(Distributor):
 
         # cuts needs one more entry which is num_pts in either c or n.
         cuts = np.append(cuts,data_object.x.shape[0])
-        
+
         data_object.slices = [np.s_[cuts[i]:cuts[i+1],...] for i in range(len(cuts)-1)]
         return self
 
@@ -192,18 +194,15 @@ class DistributorSPH2D(Distributor):
         b = x[:,1]
         return ((a + b) * (a + b + 1) / 2 + b).astype(int)
 
-    def populate_particles(self):
+    def populate_particles(self,data_object):
         """
-        Procedure that populates all nonempty cells.
+        Helper function for initialization procedure. Loads each particle
+        into its corresponding cell memory.
         """
-        for i in range(self.c.nonempty_cells_id.shape[0]):
-            id_tag = self.c.nonempty_cells_id[i]
-
-            x_cell = self.c.x[self.c.slices[i]]
-            v_cell = self.c.v[self.c.slices[i]]
-            masses_cell =  self.c.masses[self.c.slices[i]]
-
-            self.id_cells_dict[id_tag].populate(x_cell,v_cell,masses_cell)
+        self.distribute_method(self.cell_type.populate,
+                               data_object.x,
+                               data_object.v,
+                               data_object.masses)
 
     def load_neighbors(self):
         """
@@ -244,61 +243,6 @@ class DistributorSPH2D(Distributor):
 
         return self
 
-    def populate_neighbors(self):
-        """
-        Method which populates neighbors of all nonempty cells.
-        """
-        num_neighbors = 9
-
-        self.n.cuts = np.searchsorted(self.n.x_id, self.n.nonempty_cells_id)
-        # needs to add the endpoint
-        num_duplicated_pts = num_neighbors * self.c.x.shape[0]
-        self.n.cuts = np.append(self.n.cuts,num_duplicated_pts)
-
-        for i in range(self.n.nonempty_cells_id.shape[0]):
-            cell_id = self.n.nonempty_cells_id[i]
-            x_cell_neighbors = self.n.x[self.n.cuts[i]:self.n.cuts[i + 1],:]
-            v_cell_neighbors = self.n.v[self.n.cuts[i]:self.n.cuts[i + 1],:]
-            masses_neighbors = self.n.masses[self.n.cuts[i]:self.n.cuts[i + 1]]
-
-            # Assign X_cell to the cell corresponding to hash
-            self.id_cells_dict[cell_id].populate_neighbors(x_cell_neighbors,
-                                                v_cell_neighbors, masses_neighbors)
-
-    def distribute_procedure(self,method,args):
-        """
-        Method that applies an input cell procedure to all nonempty cells 
-        in the array. This is for methods that we only want to modify the
-        internal state of cells (i.e. don't want to aggregate the
-        computation into global memory.)
-        """
-
-        for i in self.c.nonempty_cells_id:
-            method(self.id_cells_dict[i],*args)
-
-    def distribute_function(self,method,output_dim,args):
-        """
-        Method that applies an input cell function using input args to all
-        nonempty cells in the cell lookup and collects the outputs into
-        global memory which is then returned.
-        """
-        num_nonempty_cells = self.c.nonempty_cells_id.shape[0]
-
-        if output_dim == 2:
-            output = np.zeros((self.num_pts,output_dim))
-            for i in range(num_nonempty_cells):
-                tag = self.c.nonempty_cells_id[i]
-                output[self.c.cuts[i]:self.c.cuts[i+1],:] = method(self.id_cells_dict[tag],*args)
-
-        if output_dim == 1:
-            output = np.zeros(self.num_pts)
-            for i in range(num_nonempty_cells):
-                tag = self.c.nonempty_cells_id[i]
-                output[self.c.cuts[i]:self.c.cuts[i+1]] = method(self.id_cells_dict[tag],*args)
-            output = output.reshape(self.num_pts)
-
-        return output
-
     def duplicate(self,d):
         """
         Helper function that duplicates input data to a form that is consistent
@@ -306,17 +250,7 @@ class DistributorSPH2D(Distributor):
         particle to an array of size num_neighbors times the original array.
         This array then book keeps the densities in neighboring cells.
         """
-        if len(d.shape) == 2:
-            _, d_dim = d.shape
-        elif len(d.shape) == 1:
-            d_dim = 1
-        else:
-            print("Error: Tried to duplicate a 3+ dimensional array.")
-
-        if d_dim == 2:
-            d_copies = np.repeat(d[:, :, np.newaxis], self.num_neighbors, axis=2)
-        if d_dim == 1:
-            d_copies = np.repeat(d[:,np.newaxis],self.num_neighbors,axis=1)
+        d_copies = np.repeat(d[..., np.newaxis], self.num_neighbors, axis=-1)
 
         return d_copies
 
@@ -347,7 +281,7 @@ class DistributorSPH2D(Distributor):
         shifted_d_copies = d_copies + shift_vectors.T
         return shifted_d_copies
 
-    def distribute_method(self,cell_method,*args, domain= 'c',returns = False, codomain = 'c',
+    def distribute_method(self,cell_method,*args, domain='c',returns = False, codomain ='c',
                         **kwargs):
         """
         A decorator that distributes a given cell method across all cells in
@@ -395,11 +329,11 @@ class DistributorSPH2D(Distributor):
         if returns is False:
             generators = map(lambda A:
                             (A[i] for i in
-                            domain_data_object.slices), *args)
+                            domain_data_object.slices), args)
             iterator = zip(*generators)
 
-            for id,inputs in zip(self.c.nonempty_cells_id,iterator):
-                cell_method(self.id_cells_dict[id],*inputs,**kwargs)
+            for cell_id,inputs in zip(self.c.nonempty_cells_id,iterator):
+                cell_method(self.id_cells_dict[cell_id],*inputs,**kwargs)
 
         if returns is True:
             output_dim = cell_method.output_dim
@@ -413,6 +347,11 @@ class DistributorSPH2D(Distributor):
 
             output_iterator = (i for i in codomain_data_object.slices)
 
-            for id,output_slices,inputs in zip(self.c.nonempty_cells_id,output_iterator,iterator):
-                output[output_slices] = cell_method(self.id_cells_dict[id],*inputs,**kwargs)
+            for cell_id,output_slices,inputs in zip(self.c.nonempty_cells_id,
+                                                    output_iterator,
+                                                    iterator):
+
+                output[output_slices] = cell_method(self.id_cells_dict[cell_id],
+                                                    *inputs,
+                                                    **kwargs)
             return output
