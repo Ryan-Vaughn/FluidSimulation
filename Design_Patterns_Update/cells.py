@@ -59,6 +59,7 @@ class FluidSimCell(Cell):
     """
     Cell for computing forces in 2d Smoothed Particle Hydrodynamics.          
     """
+    
     def __init__(self,eps):
         super().__init__(eps)
 
@@ -92,6 +93,17 @@ class FluidSimCell(Cell):
         self.n.masses = masses
 
         self.n.num_pts, _ = self.n.x.shape
+
+    def compute_forces_step_1(self):
+        """
+        Helper function to run the SPH algorithm.
+        """
+
+        self.compute_distances()
+        self.compute_density_kernel()
+        self.compute_densities()
+        densities = self.get_densities()
+        return densities
 
     def compute_distances(self):
         """
@@ -129,8 +141,12 @@ class FluidSimCell(Cell):
         cell and can only be updated after all of the pressures in the sim
         have been computed.
         """
-        return self.c.densities
 
+        self.get_densities.output_dim = 1
+
+        return self.c.densities
+    get_densities.output_dim = 1
+    compute_forces_step_1.output_dim = 1
     def set_pressures(self,pressures):
         """
         Helper function used to set the pressures in the cell. Purely for
@@ -144,6 +160,16 @@ class FluidSimCell(Cell):
         Purely for convenience and clarity.
         """
         self.n.pressures = pressures
+
+    def compute_symmetric_pressures(self):
+        """
+        Symmetrizes the pressure quantity so that pressure force calculation
+        respects Newton's 3rd law.
+
+        Due to the kernel 
+        """    
+        symmetric_pressures = np.sum((np.add.outer(self.c.pressures,self.n.pressures)) / (2 * (self.n.densities)), axis = 1)
+        return symmetric_pressures
 
     def compute_distance_gradients(self):
         """
@@ -178,8 +204,6 @@ class FluidSimCell(Cell):
         for i in range(self.dim):
             pderivs = kernel_deriv * self.distance_gradients[:,:,i]
             self.pressure_kernel_gradients[:,:,i] = pderivs
-# TODO: MERGE THESE IN.
-
 """
     def compute_pressure_forces(self):
         # combine pressure kernel gradient, distance gradient, and symmetric pressure
@@ -193,8 +217,10 @@ class FluidSimCell(Cell):
 
         #sum over one axis to obtain estimate for the pressure forces at each point.
         self.pressure_forces = self.mass_constant *  np.sum(self.pressure_forces,axis=1)
+"""
 
-
+"""
+TODO:
     def compute_viscosity_kernel(self):
         # Compute the viscosity kernel matrix in analogous fashion to density kernel.                    
         self.viscosity_kernel_matrix = 15/(2 * np.pi * self.eps ** 3) * ((- self.distances ** 3)/(2 * self.eps ** 3) +  (self.distances ** 2) / self.eps ** 2 + self.eps / (2 * self.distances) - 1)

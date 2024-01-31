@@ -28,17 +28,18 @@ bounds = np.array([max_x + np.abs(min_x) + 10, max_y + np.abs(min_y) + 10])
 
 v = np.zeros(x.shape)
 masses = np.ones(NUM_PTS)
-start_setup_time = time.time()
+
 dist = distributors.SPHDistributor((x,v,masses),(cells.FluidSimCell,EPS,bounds))
-end_setup_time = time.time()
 
-A = np.ones((NUM_PTS,2))
-B = 2* np.ones((NUM_PTS,2))
-C = 3* np.ones(NUM_PTS)
+PRESSURE_CONSTANT =1
+REST_DENSITY = 0
 
-physical_data = (A,B,C)
-dist.distribute_method(dist.cell_type.populate,*physical_data)
+densities,debug = dist.distribute_method(cells.FluidSimCell.compute_forces_step_1, returns=True)
 
-dist.distribute_method(dist.cell_type.compute_distances)
-dist.distribute_method(dist.cell_type.compute_density_kernel)
-dist.distribute_method(dist.cell_type.compute_densities)
+
+pressures = PRESSURE_CONSTANT * (densities - REST_DENSITY)
+pressures_duplicated = dist.duplicate(pressures)
+pressures_n = dist.arrange(pressures_duplicated)
+
+dist.distribute_method(cells.FluidSimCell.set_pressures,pressures)
+dist.distribute_method(cells.FluidSimCell.set_pressures_n,pressures_n,domain='n',codomain='n')

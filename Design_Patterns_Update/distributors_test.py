@@ -11,7 +11,7 @@ def fixture_grid_dataset():
     """
     Generates a data set consisting of one point in each of a 3x3 grid.
     """
-    cell_type = cells.CellSPH2D
+    cell_type = cells.FluidSimCell
     eps = .3
     bounds = np.array([1,1])
     meta_data = (cell_type,eps,bounds)
@@ -31,7 +31,7 @@ def fixture_sph2d_distributor(grid_dataset):
     Generates a 2D SPH distributor using the grid dataset.
     """
     physical_data, meta_data = grid_dataset
-    dist = distributors.DistributorSPH2D(physical_data,meta_data)
+    dist = distributors.SPHDistributor(physical_data,meta_data)
     return dist
 
 def test_sort_particles_unique(sph2d_distributor):
@@ -80,7 +80,7 @@ def test_sort_particles_quantity(sph2d_distributor):
     nums_targets = np.ones(9)
 
     ids_outputs = np.sort(sph2d_distributor.c.nonempty_cells_id)
-    nums_outputs = np.array([sph2d_distributor.id_cells_dict[i].x_c.shape[0]
+    nums_outputs = np.array([sph2d_distributor.id_cells_dict[i].c.x.shape[0]
                              for i in ids_targets])
 
     correct_ids = np.array_equal(ids_outputs,ids_targets)

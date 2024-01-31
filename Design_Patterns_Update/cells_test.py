@@ -2,7 +2,7 @@
 Testing cells
 """
 import numpy as np
-from cells import  CellSPH2D
+from cells import FluidSimCell
 import pytest
 
 @pytest.fixture(name='ring_dataset')
@@ -31,7 +31,7 @@ def fixture_cell():
     Creates a SPH2D cell with eps = .3.
     """
     eps = .3
-    return CellSPH2D(eps)
+    return FluidSimCell(eps)
 
 def test_populate(ring_dataset, cell):
     """
@@ -39,7 +39,7 @@ def test_populate(ring_dataset, cell):
     """
     x_c,v_c,masses_c = ring_dataset
     cell.populate(x_c,v_c,masses_c)
-    assert (cell.x_c, cell.v_c, cell.masses_c) == ring_dataset
+    assert (cell.c.x, cell.c.v, cell.c.masses) == ring_dataset
 
 def test_populate_neighbors(ring_dataset,cell):
     """
@@ -47,8 +47,8 @@ def test_populate_neighbors(ring_dataset,cell):
     neighbors memory.
     """
     x_n,v_n,masses_n = ring_dataset
-    cell.populate_neighbors(x_n,v_n,masses_n)
-    assert (cell.x_n, cell.v_n, cell.masses_n) == ring_dataset
+    cell.populate(x_n,v_n,masses_n)
+    assert (cell.n.x, cell.n.v, cell.n.masses) == ring_dataset
 
 def test_compute_distances():
     """

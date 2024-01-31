@@ -11,7 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 @dataclasses.dataclass
-class SPHDistInputData():
+class SPHDistInputData:
     """
     Data class to book keep all the internal data of the Distributor.
 
@@ -92,15 +92,15 @@ class SPHDistributor(Distributor):
 
     """
 
-    def __init__(self,physical_data,meta_data):
+    def __init__(self,initial_physical_data,dist_meta_data):
 
         self.dim = None
         self.num_pts = None
         self.num_neighbors = None
 
-        self.cell_type, self.eps,self.bounds = meta_data
+        self.cell_type, self.eps,self.bounds = dist_meta_data
 
-        self.id_cells_dict = self.initialize_lookup(*meta_data)
+        self.id_cells_dict = self.initialize_lookup(*dist_meta_data)
 
         # Data class for storing global data for cells
         self.c = SPHDistInputData()
@@ -108,9 +108,16 @@ class SPHDistributor(Distributor):
         # Data class for storing global data for neighbors.
         self.n = SPHDistInputData()
 
+        self.update(initial_physical_data)
+
+    def update(self,physical_data):
+        """
+        Update the positions, velocities, and masses in the simulation, then
+        assign corresponding data to the cells. This happens once on
+        initialization, then repeats at every computation step in the sim.
+        """
         # Load all the global data into the distributor and generate cell
         # assignment ids.
-
         self.load_particles(*physical_data).sort_particles(self.c)
         self.load_neighbors().sort_particles(self.n)
 
@@ -162,11 +169,60 @@ class SPHDistributor(Distributor):
         self.c.x_g = np.rint(self.c.x / self.eps).astype(int)
         self.c.x_id = self.map_to_id(self.c.x_g)
         return self
+    
+    def load_neighbors(self):
+        """
+        Procedure which updates the data necessary to track all particles 
+        neighboring each cell.
+
+        This is achieved through composing three functions: duplicate, shift,
+        arrange. Duplicate copies the list of all particles once for each
+        neighboring cell. Shift maps each individual copy of the data to the
+        corresponding neighboring cell, and arrange organizes the duplicated
+        data in a consistent manner.
+        """
+        _eps_e1 = np.arange(2)
+        _eps_e2 = np.arange(1,-1,-1)
+        _ul = -1 * _eps_e1 + _eps_e2
+        _um = _eps_e2
+        _ur = _eps_e1 + _eps_e2
+        _ml = -1 * _eps_e1
+        _mm = np.zeros(2)
+        _mr = _eps_e1
+        _bl = -1 * _eps_e1 + -1 * _eps_e2
+        _bm = -1 * _eps_e2
+        _br = _eps_e1 + -1 * _eps_e2
+
+        shift_vectors =  np.array([_ul,_um,_ur,_ml,_mm,_mr,_bl,_bm,_br])
+
+        # Duplicate the array num_neighbors times then arrange to a 2d array.
+        # This is to keep track of physical data corresponding to a particle.
+        self.n.x = self.arrange(self.duplicate(self.c.x))
+        self.n.v = self.arrange(self.duplicate(self.c.v))
+        self.n.masses = self.arrange(self.duplicate(self.c.masses))
+
+        # Duplicate the grid points, then shift each grid point to one of its
+        # neighbors, finally arrange in the same manner as the physical data.
+        g_copies = self.duplicate(self.c.x_g)
+        shifted_g_copies = self.shift(g_copies,shift_vectors)
+        self.n.x_g = self.arrange(shifted_g_copies)
+
+        # Map the grid points uniquely to an integer id value.
+        self.n.x_id = self.map_to_id(self.n.x_g)
+
+        return self
 
     def sort_particles(self,data_object):
         """
-         The physical quantites are then all sorted according
-        to this id.
+        Procedure that sorts all relevant data according to an integer
+        id value assigned.
+
+        Parameters
+        ----------
+        data_object : SPHDistInputData
+            Data object holding information tracking either cell data or
+            neighboring cell data. Either self.c or self.n are the only
+            valid inputs.
         """
         data_object.sort_indices = np.argsort(data_object.x_id)
 
@@ -204,45 +260,6 @@ class SPHDistributor(Distributor):
                                data_object.v,
                                data_object.masses)
 
-    def load_neighbors(self):
-        """
-        Procedure which updates all the internal data of the neighbors given 
-        the of each cell that is dependent on input physical data.
-
-        Specifically, the collection of neighbors of a given cell are mapped
-        to its id. The same values computed for the cell in sort_particles 
-        are then computed for all neighboring points.
-        """
-        _eps_e1 = np.arange(2)
-        _eps_e2 = np.arange(1,-1,-1)
-        _ul = -1 * _eps_e1 + _eps_e2
-        _um = _eps_e2
-        _ur = _eps_e1 + _eps_e2
-        _ml = -1 * _eps_e1
-        _mm = np.zeros(2)
-        _mr = _eps_e1
-        _bl = -1 * _eps_e1 + -1 * _eps_e2
-        _bm = -1 * _eps_e2
-        _br = _eps_e1 + -1 * _eps_e2
-
-        shift_vectors =  np.array([_ul,_um,_ur,_ml,_mm,_mr,_bl,_bm,_br])
-
-        # Duplicate the array num_neighbors times then arrange to a 2d array.
-        self.n.x = self.arrange(self.duplicate(self.c.x))
-        self.n.v = self.arrange(self.duplicate(self.c.v))
-        self.n.masses = self.arrange(self.duplicate(self.c.masses))
-
-        # Perform the same process but shift each copy of the points by the
-        # corresponding direction vector.
-        g_copies = self.duplicate(self.c.x_g)
-        shifted_g_copies = self.shift(g_copies,shift_vectors)
-        self.n.x_g = self.arrange(shifted_g_copies)
-
-        # Apply hash to full_cells
-        self.n.x_id = self.map_to_id(self.n.x_g)
-
-        return self
-
     def duplicate(self,d):
         """
         Helper function that duplicates input data to a form that is consistent
@@ -273,12 +290,12 @@ class SPHDistributor(Distributor):
 
         return d_arranged_copies
 
-    def shift(self, d_copies, shift_vectors):
+    def shift(self, d_copies, shifts):
         """
         A helper function that maps each copy of the points in the direction
         of the neighbor.
         """
-        shifted_d_copies = d_copies + shift_vectors.T
+        shifted_d_copies = d_copies + shifts.T
         return shifted_d_copies
 
     def distribute_method(self,cell_method,*args, domain='c',returns = False, codomain ='c',
@@ -332,21 +349,26 @@ class SPHDistributor(Distributor):
                             domain_data_object.slices), args)
             iterator = zip(*generators)
 
-            for cell_id,inputs in zip(self.c.nonempty_cells_id,iterator):
+            for cell_id,inputs in zip(self.n.nonempty_cells_id,iterator):
                 cell_method(self.id_cells_dict[cell_id],*inputs,**kwargs)
 
         if returns is True:
             output_dim = cell_method.output_dim
-            output_shape = (_num_pts,) + tuple(output_dim)
+            output_shape = (_num_pts, output_dim)
+            
+            if output_dim == 1:
+                output_shape = (_num_pts,)
+            
             output = np.zeros(output_shape)
 
             generators = map(lambda A:
                             (A[i] for i in
-                            domain_data_object.slices), *args)
+                            domain_data_object.slices), args)
             iterator = zip(*generators)
 
             output_iterator = (i for i in codomain_data_object.slices)
-
+            debug = (self.c.nonempty_cells_id,output_iterator,iterator)
+            
             for cell_id,output_slices,inputs in zip(self.c.nonempty_cells_id,
                                                     output_iterator,
                                                     iterator):
@@ -354,4 +376,6 @@ class SPHDistributor(Distributor):
                 output[output_slices] = cell_method(self.id_cells_dict[cell_id],
                                                     *inputs,
                                                     **kwargs)
-            return output
+
+            
+            return output,debug
