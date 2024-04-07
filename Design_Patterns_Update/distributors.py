@@ -134,6 +134,25 @@ class SPHDistributor(Distributor):
         applying a bijective map between the set of integers and the 
         set of pairs of integers, resulting in a unique integer id for 
         each cell.
+
+        Parameters
+        ----------
+        cell_type : Cell
+            A subclass of the Cell class that will be used to construct
+            the grid of cells.
+        eps : float
+            A tolerance parameter used to adjust the granularity of cell
+            computations. Smaller eps means finer granularity.
+        bounds : array-like
+            Array specifying the maximum x value and y value in the grid.
+
+        Returns
+        -------
+        id_cells_dict : dict
+        A dictionary whose keys are a unique integer id corresponding to
+        an ordered pair of natural numbers (bijection from grid of
+        natural numbers (i,j) to natural numbers) and whose values are 
+        cells responsible for storing particles closest to (i * eps,j * eps)
         """
 
         grid_bounds = np.ceil(bounds/eps)
@@ -355,10 +374,10 @@ class SPHDistributor(Distributor):
         if returns is True:
             output_dim = cell_method.output_dim
             output_shape = (_num_pts, output_dim)
-            
+
             if output_dim == 1:
                 output_shape = (_num_pts,)
-            
+
             output = np.zeros(output_shape)
 
             generators = map(lambda A:
@@ -367,8 +386,7 @@ class SPHDistributor(Distributor):
             iterator = zip(*generators)
 
             output_iterator = (i for i in codomain_data_object.slices)
-            debug = (self.c.nonempty_cells_id,output_iterator,iterator)
-            
+
             for cell_id,output_slices,inputs in zip(self.c.nonempty_cells_id,
                                                     output_iterator,
                                                     iterator):
@@ -377,5 +395,5 @@ class SPHDistributor(Distributor):
                                                     *inputs,
                                                     **kwargs)
 
-            
-            return output,debug
+
+            return output

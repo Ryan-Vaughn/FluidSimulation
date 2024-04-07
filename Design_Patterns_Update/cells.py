@@ -145,8 +145,10 @@ class FluidSimCell(Cell):
         self.get_densities.output_dim = 1
 
         return self.c.densities
+    
     get_densities.output_dim = 1
     compute_forces_step_1.output_dim = 1
+    
     def set_pressures(self,pressures):
         """
         Helper function used to set the pressures in the cell. Purely for
